@@ -10,10 +10,18 @@ SNAPSHOT_KEEP = 3
 
 
 def _load(path, default):
-    try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
-    except Exception:
+    p = Path(path)
+    if not p.exists():
         return default
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        bad = p.with_suffix(p.suffix + ".bad-" + time.strftime("%Y%m%d-%H%M%S"))
+        try:
+            p.rename(bad)
+        except Exception:
+            pass
+        raise RuntimeError(f"记忆文件损坏，已备份到 {bad.name}，请检查后重新初始化")
 
 
 def _save(path, data):
@@ -172,19 +180,23 @@ class Store:
 
     # ---------- 归档块 ----------
     def block_add(self, summary, tags=None, source=""):
-        summary = self._check(summary, 2000, "块")
+        summary = (summary or "").strip()
+        if not summary:
+            raise ValueError("块 不能为空")
         bid = "blk-" + time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
+        # 先按 800 字切块，再逐块校验，不先截断
+        chunks = [summary[i:i + 800] for i in range(0, len(summary), 800)]
         blocks = []
-        if len(summary) > 800:
-            blocks = [
-                {"id": bid, "summary": summary[:600] + "…", "tags": tags or [], "source": source,
-                 "time": time.strftime("%Y-%m-%d %H:%M"), "split": True},
-                {"id": bid + "-b", "summary": "…" + summary[600:], "tags": tags or [], "source": source,
-                 "time": time.strftime("%Y-%m-%d %H:%M"), "split": True},
-            ]
-        else:
-            blocks = [{"id": bid, "summary": summary, "tags": tags or [], "source": source,
-                       "time": time.strftime("%Y-%m-%d %H:%M")}]
+        for i, c in enumerate(chunks):
+            c = self._check(c, 2000, "块")
+            blocks.append({
+                "id": bid if i == 0 else f"{bid}-{i}",
+                "summary": c + ("…" if i < len(chunks) - 1 else ""),
+                "tags": tags or [],
+                "source": source,
+                "time": time.strftime("%Y-%m-%d %H:%M"),
+                "split": len(chunks) > 1,
+            })
         with self._locked():
             for b in blocks:
                 _save(self.blocks / f"{b['id']}.json", b)
@@ -236,10 +248,10 @@ class Store:
     # ---------- 快照 ----------
     def snapshot(self):
         import shutil
-        dst = self.snapshots / ("snap-" + time.strftime("%Y%m%d-%H%M%S"))
+        dst = self.snapshots / ("snap-" + time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4])
         dst.mkdir(parents=True, exist_ok=True)
-        for p in (self.stable, self.todo):
-            if p.exists():
+        for p in self.root.glob("*.json*"):
+            if p.is_file() and not p.name.startswith(".lock") and ".bad-" not in p.name:
                 shutil.copy2(p, dst / p.name)
         if self.blocks.exists():
             shutil.copytree(self.blocks, dst / "blocks", dirs_exist_ok=True)
@@ -253,9 +265,9 @@ class Store:
         src = Path(snap)
         if not src.exists():
             raise FileNotFoundError(snap)
-        for p in (self.stable, self.todo):
-            if (src / p.name).exists():
-                shutil.copy2(src / p.name, p)
+        for p in src.glob("*.json*"):
+            if p.is_file() and ".bad-" not in p.name:
+                shutil.copy2(p, self.root / p.name)
         if (src / "blocks").exists():
             shutil.copytree(src / "blocks", self.blocks, dirs_exist_ok=True)
         return {"ok": True, "from": str(src)}
