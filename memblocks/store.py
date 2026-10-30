@@ -110,8 +110,17 @@ class Store:
         }
 
     # ---------- 稳定事实 ----------
+    def _check(self, text, limit, kind):
+        text = (text or "").strip()
+        if not text:
+            raise ValueError(f"{kind} 不能为空")
+        if len(text) > limit:
+            self.log(f"warn: {kind} 超长 {len(text)}>{limit}，已截断")
+            text = text[:limit]
+        return text
+
     def stable_add_raw(self, text: str, tags=None, protected: bool = False):
-        text = (text or "")[:200]
+        text = self._check(text, 200, "稳定记忆")
         data = _load(self.stable, [])
         item = {"text": text, "tags": tags or [], "protected": protected,
                 "at": time.strftime("%Y-%m-%d %H:%M")}
@@ -145,7 +154,7 @@ class Store:
     # ---------- 待办 ----------
     def todo_add_raw(self, text: str, due: str = ""):
         from .timeparse import normalize as _norm
-        text = (text or "")[:200]
+        text = self._check(text, 200, "待办")
         if due:
             due = _norm(due) or due
         data = _load(self.todo, [])
@@ -190,17 +199,26 @@ class Store:
         return _load(self.config, {}).get("owner_names", ["主人", "我"])
 
     def fact_add_raw(self, text: str, entity: str = "", tags=None, protected=None, emotion=None):
-        text = (text or "")[:200]
+        text = self._check(text, 200, "事实")
         from .emotions import score as _emo
         emotion = emotion or _emo(text)
         if protected is None:
             protected = entity.strip() in self.owner_names()
         data = _load(self.facts, [])
+        # 冲突检测：同一人物 + 同一类别，新的覆盖旧的
+        kind = (tags or [""])[0]
+        if not kind:
+            for kw, k in (("生日", "生日"), ("职业是", "职业"), ("住在", "位置"), ("在", "位置"),
+                          ("喜欢", "偏好"), ("不喜欢", "偏好")):
+                if kw in text:
+                    kind = k
+                    break
         item = {
             "id": "fact-" + time.strftime("%Y%m%d-%H%M%S") + "-" + __import__("uuid").uuid4().hex[:4],
             "text": text,
             "entity": entity,
             "tags": tags or [],
+            "kind": kind,
             "protected": bool(protected),
             "score": round((1.5 if (tags and tags[0] in ("生日", "职业", "关系")) else 1.0)
                            * (1 + 0.6 * emotion.get("arousal", 0)), 3),
@@ -218,11 +236,10 @@ class Store:
                 _save(self.facts, data)
                 return old
 
-        # 冲突检测：同一人物 + 同一类别，新的覆盖旧的
-        kind = (tags or [""])[0]
         if entity and kind and kind not in ("", "other"):
             for old in data:
-                if (old.get("entity") == entity and (old.get("tags") or [""])[0] == kind
+                old_kind = old.get("kind") or (old.get("tags") or [""])[0]
+                if (old.get("entity") == entity and old_kind == kind
                         and not old.get("superseded") and old.get("text") != text):
                     old["superseded"] = True
                     old["superseded_by"] = item["id"]
@@ -233,7 +250,6 @@ class Store:
     def fact_list(self, include_superseded=False):
         data = _load(self.facts, [])
         return data if include_superseded else [x for x in data if not x.get("superseded")]
-        return _load(self.facts, [])
 
     def fact_hit_raw(self, fid: str):
         data = _load(self.facts, [])
@@ -285,18 +301,20 @@ class Store:
 
     # ---------- 待确认队列 ----------
     def pending_add_raw(self, items):
-        if isinstance(items, dict):
+        if isinstance(items, (dict, str)):
             items = [items]
         data = _load(self.pending, [])
         added = 0
         for it in items:
+            if isinstance(it, str):
+                it = {"text": it, "entity": "", "kind": "其他"}
+            it = dict(it)
             key = (it.get("entity", ""), it.get("text", ""))
             if any((x.get("entity", ""), x.get("text", "")) == key for x in data):
                 continue
             # 跨轮去重：已入库的事实不再重复入候选
             if any((x.get("entity", ""), x.get("text", "")) == key for x in _load(self.facts, [])):
                 continue
-            it = dict(it)
             it["id"] = "pfact-" + time.strftime("%Y%m%d-%H%M%S") + "-" + __import__("uuid").uuid4().hex[:4]
             data.append(it)
             added += 1
@@ -365,8 +383,8 @@ class Store:
     # ---------- 归档块 ----------
     def block_add_raw(self, summary: str, topic: str = "", type_: str = "note",
                   objects=None, conclusion: str = "", synonyms=None, source: str = ""):
-        summary = (summary or "")[:1000]
-        bid = "block-" + time.strftime("%Y%m%d-%H%M%S")
+        summary = self._check(summary, 2000, "块")
+        bid = "block-" + time.strftime("%Y%m%d-%H%M%S") + "-" + __import__("uuid").uuid4().hex[:6]
         block = {
             "id": bid,
             "summary": summary,
@@ -381,6 +399,12 @@ class Store:
             "time": time.strftime("%Y-%m-%d %H:%M"),
         }
         _save(self.blocks / f"{bid}.json", block)
+        if len(summary) > 800:
+            mid = 600
+            self.block_add_raw("…" + summary[mid:], topic, type_, objects, conclusion, synonyms, source)
+            block["summary"] = summary[:mid] + "…"
+            block["split"] = True
+            _save(self.blocks / f"{bid}.json", block)
         return block
 
     def block_list(self):
@@ -566,6 +590,15 @@ class Store:
         with open(self.audit, "a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
 
+    def export_zip(self, out_path):
+        import zipfile
+        out = Path(out_path)
+        with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
+            for p in self.root.rglob("*"):
+                if p.is_file() and not p.name.startswith(".lock"):
+                    z.write(p, p.relative_to(self.root))
+        return str(out)
+
     def restore(self, snapshot_dir):
         """从快照恢复（覆盖当前记忆文件）。"""
         import shutil
@@ -591,4 +624,7 @@ class Store:
                 shutil.copy2(p, dst / p.name)
         if self.blocks.exists():
             shutil.copytree(self.blocks, dst / "blocks", dirs_exist_ok=True)
+        snaps = sorted([x for x in self.snapshots.iterdir() if x.is_dir()])
+        for old in snaps[:-10]:
+            shutil.rmtree(old, ignore_errors=True)
         return dst
