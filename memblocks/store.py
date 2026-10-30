@@ -251,9 +251,12 @@ class Store:
     def event_add(self, when: str, actor: str, action: str, obj: str = "",
                   block_id: str = "", emotion=None):
         from .emotions import score as _emo
+        from .timeparse import normalize as _norm
+        when_abs = _norm(when) or when
         ev = {
             "event_id": "evt-" + time.strftime("%Y%m%d-%H%M%S") + "-" + __import__("uuid").uuid4().hex[:4],
-            "when": when,
+            "when": when_abs,
+            "when_raw": when,
             "actor": actor,
             "action": action,
             "object": obj,
