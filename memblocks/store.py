@@ -183,7 +183,7 @@ class Store:
         summary = (summary or "").strip()
         if not summary:
             raise ValueError("块 不能为空")
-        bid = "blk-" + time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4]
+        bid = "blk-" + time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:10]
         # 先按 800 字切块，再逐块校验，不先截断
         chunks = [summary[i:i + 800] for i in range(0, len(summary), 800)]
         blocks = []
@@ -248,7 +248,7 @@ class Store:
     # ---------- 快照 ----------
     def snapshot(self):
         import shutil
-        dst = self.snapshots / ("snap-" + time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:4])
+        dst = self.snapshots / ("snap-" + time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:10])
         dst.mkdir(parents=True, exist_ok=True)
         for p in self.root.glob("*.json*"):
             if p.is_file() and not p.name.startswith(".lock") and ".bad-" not in p.name:
