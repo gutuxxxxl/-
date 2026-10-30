@@ -41,12 +41,33 @@ class Store:
         return {"ok": True, "root": str(self.root)}
 
     # ---------- 稳定事实 ----------
-    def stable_add(self, text: str, tags=None):
+    def stable_add(self, text: str, tags=None, protected: bool = False):
         data = _load(self.stable, [])
-        item = {"text": text, "tags": tags or [], "at": time.strftime("%Y-%m-%d %H:%M")}
+        item = {"text": text, "tags": tags or [], "protected": protected,
+                "at": time.strftime("%Y-%m-%d %H:%M")}
         data.append(item)
         _save(self.stable, data)
         return item
+
+    # ---------- 人设（接入即视为重要） ----------
+    def set_persona(self, text: str):
+        """人设整体替换，永久保护，不参与淘汰。"""
+        data = [x for x in _load(self.stable, []) if not x.get("protected")]
+        data.insert(0, {
+            "text": text.strip(),
+            "tags": ["人设", "身份"],
+            "protected": True,
+            "kind": "persona",
+            "at": time.strftime("%Y-%m-%d %H:%M"),
+        })
+        _save(self.stable, data)
+        return data[0]
+
+    def persona(self):
+        for x in _load(self.stable, []):
+            if x.get("kind") == "persona":
+                return x
+        return None
 
     def stable_list(self):
         return _load(self.stable, [])
@@ -129,7 +150,10 @@ class Store:
     # ---------- 注入 ----------
     def inject(self, query: str = "", max_tokens: int = 800):
         parts = []
-        stable = self.stable_list()
+        per = self.persona()
+        if per:
+            parts.append("【人设】\n" + per["text"])
+        stable = [x for x in self.stable_list() if not x.get("kind") == "persona"]
         if stable:
             parts.append("【稳定记忆】\n" + "\n".join(f"- {x['text']}" for x in stable[-30:]))
         todos = self.todo_list()
