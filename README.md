@@ -189,3 +189,27 @@ python -m memblocks.cli janitor              # 自动维护
 python -m memblocks.cli janitor --dry-run    # 只看不改
 python -m memblocks.cli doctor               # 只读体检
 ```
+
+## 人物事实：谁会留下，谁会淡忘
+
+关于人的信息单独存一层，带权重：
+
+```bash
+# 主人 / 管理员 → 自动永久保护
+python -m memblocks.cli fact add --text "生日是 5 月 20 日" --entity "主人"
+
+# 路人 → 默认不保护，会随时间衰减
+python -m memblocks.cli fact add --text "生日是 3 月 3 日" --entity "张三"
+```
+
+规则：
+
+| 对象 | 行为 |
+| --- | --- |
+| 主人 / 管理员 / 我 | `protected: true`，永不淡忘 |
+| 其他人 | 权重 1.0 起，每次维护 ×0.85，低于 0.15 自动删除 |
+| 再被提到 | `fact hit --id <id>` 权重 +0.5，越常提越牢 |
+
+主人名单在 `memories/config.json` 的 `owner_names` 里，可以自己改。
+
+注入时会在【关于人物】里列出当前权重最高的事实。
