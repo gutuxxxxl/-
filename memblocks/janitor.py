@@ -8,9 +8,10 @@ class Janitor:
 
     MAX_CHANGES = 10
 
-    def __init__(self, store: Store, dry_run: bool = False):
+    def __init__(self, store: Store, dry_run: bool = False, purge_days: int = 3):
         self.s = store
         self.dry_run = dry_run
+        self.purge_days = purge_days
         self.changes = 0
         self.report = {
             "blocks": 0, "stable": 0, "todos": 0, "recent": 0,
@@ -51,12 +52,27 @@ class Janitor:
             else:
                 keep.append(t)
         self.report["expired_todos"] = len(expired)
+        from .store import _save
         if expired and not self.dry_run:
             if self._change(f"归档过期待办 {len(expired)} 条"):
                 for t in expired:
                     t["done"] = True
-                from .store import _save
                 _save(self.s.todo, keep + expired)
+
+        # 1b. 短期记忆：过期待办超过 purge_days 天后自动删除
+        all_todos = self.s.todo_list(True)
+        alive = []
+        purged = 0
+        for t in all_todos:
+            d = self._parse_due(t.get("due", ""))
+            if t.get("done") and d and (today - d).days >= self.purge_days:
+                purged += 1
+                continue
+            alive.append(t)
+        self.report["purged_todos"] = purged
+        if purged and not self.dry_run:
+            if self._change(f"删除过期 {purged} 天的待办 {purged} 条"):
+                _save(self.s.todo, alive)
 
         # 2. 孤儿引用
         for b in blocks:
