@@ -1,5 +1,8 @@
 import json
+import os
+import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path("memories")
@@ -17,6 +20,9 @@ def _save(path: Path, data):
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+_TL = threading.local()
+
+
 class Store:
     def __init__(self, root: Path | str = ROOT):
         self.root = Path(root)
@@ -30,6 +36,33 @@ class Store:
         self.config = self.root / "config.json"
         self.pending = self.root / "facts_pending.json"
         self.events = self.root / "events.jsonl"
+        self.lockfile = self.root / ".lock"
+
+    @contextmanager
+    def _locked(self):
+        """跨进程文件锁，同进程内可重入。"""
+        depth = getattr(_TL, "depth", 0)
+        _TL.depth = depth + 1
+        fh = None
+        try:
+            if depth == 0:
+                self.root.mkdir(parents=True, exist_ok=True)
+                fh = open(self.lockfile, "a+")
+                try:
+                    import msvcrt
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+                except Exception:
+                    pass
+            yield
+        finally:
+            _TL.depth = depth
+            if fh is not None:
+                try:
+                    import msvcrt
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                except Exception:
+                    pass
+                fh.close()
 
     # ---------- 初始化 ----------
     def init(self):
@@ -59,7 +92,7 @@ class Store:
         }
 
     # ---------- 稳定事实 ----------
-    def stable_add(self, text: str, tags=None, protected: bool = False):
+    def stable_add_raw(self, text: str, tags=None, protected: bool = False):
         data = _load(self.stable, [])
         item = {"text": text, "tags": tags or [], "protected": protected,
                 "at": time.strftime("%Y-%m-%d %H:%M")}
@@ -91,7 +124,7 @@ class Store:
         return _load(self.stable, [])
 
     # ---------- 待办 ----------
-    def todo_add(self, text: str, due: str = ""):
+    def todo_add_raw(self, text: str, due: str = ""):
         data = _load(self.todo, [])
         item = {"text": text, "due": due, "done": False, "at": time.strftime("%Y-%m-%d %H:%M")}
         data.append(item)
@@ -111,7 +144,7 @@ class Store:
         return None
 
     # ---------- 滚动关键词 ----------
-    def recent_add(self, text: str, limit: int = 30):
+    def recent_add_raw(self, text: str, limit: int = 30):
         line = json.dumps({"at": time.strftime("%Y-%m-%d %H:%M"), "text": text}, ensure_ascii=False)
         with open(self.recent, "a", encoding="utf-8") as f:
             f.write(line + "\n")
@@ -132,7 +165,7 @@ class Store:
     def owner_names(self):
         return _load(self.config, {}).get("owner_names", ["主人", "我"])
 
-    def fact_add(self, text: str, entity: str = "", tags=None, protected=None, emotion=None):
+    def fact_add_raw(self, text: str, entity: str = "", tags=None, protected=None, emotion=None):
         from .emotions import score as _emo
         emotion = emotion or _emo(text)
         if protected is None:
@@ -168,7 +201,7 @@ class Store:
         return data if include_superseded else [x for x in data if not x.get("superseded")]
         return _load(self.facts, [])
 
-    def fact_hit(self, fid: str):
+    def fact_hit_raw(self, fid: str):
         data = _load(self.facts, [])
         for x in data:
             if x.get("id") == fid:
@@ -179,7 +212,7 @@ class Store:
                 return x
         return None
 
-    def fact_decay(self, floor: float = 0.15):
+    def fact_decay_raw(self, floor: float = 0.15):
         """间隔复习模型：7 天内不动，7~30 天轻降，30 天以上重降。"""
         from datetime import datetime
         data = _load(self.facts, [])
@@ -211,7 +244,7 @@ class Store:
         return len(keep), dropped
 
     # ---------- 待确认队列 ----------
-    def pending_add(self, items):
+    def pending_add_raw(self, items):
         data = _load(self.pending, [])
         added = 0
         for it in items:
@@ -228,7 +261,7 @@ class Store:
     def pending_list(self):
         return _load(self.pending, [])
 
-    def pending_approve(self, pid: str):
+    def pending_approve_raw(self, pid: str):
         data = _load(self.pending, [])
         for x in data:
             if x.get("id") == pid:
@@ -238,7 +271,7 @@ class Store:
                                      protected=x.get("protected"))
         return None
 
-    def pending_reject(self, pid: str):
+    def pending_reject_raw(self, pid: str):
         data = _load(self.pending, [])
         keep = [x for x in data if x.get("id") != pid]
         _save(self.pending, keep)
@@ -248,7 +281,7 @@ class Store:
         return sorted(self.fact_list(), key=lambda x: -float(x.get("score", 0)))[:limit]
 
     # ---------- 时间线事件 ----------
-    def event_add(self, when: str, actor: str, action: str, obj: str = "",
+    def event_add_raw(self, when: str, actor: str, action: str, obj: str = "",
                   block_id: str = "", emotion=None):
         from .emotions import score as _emo
         from .timeparse import normalize as _norm
@@ -285,7 +318,7 @@ class Store:
         return rows[-limit:]
 
     # ---------- 归档块 ----------
-    def block_add(self, summary: str, topic: str = "", type_: str = "note",
+    def block_add_raw(self, summary: str, topic: str = "", type_: str = "note",
                   objects=None, conclusion: str = "", synonyms=None, source: str = ""):
         bid = "block-" + time.strftime("%Y%m%d-%H%M%S")
         block = {
@@ -322,46 +355,122 @@ class Store:
         return [b for _, b in scored[:limit]]
 
     # ---------- 注入 ----------
+    def _match(self, query: str, blob: str) -> bool:
+        q = "".join(ch for ch in (query or "") if ch.strip())
+        if not q:
+            return True
+        grams = {q[i:i + 2] for i in range(len(q) - 1)} if len(q) > 1 else {q}
+        return any(g in blob for g in grams)
+
     def inject(self, query: str = "", max_tokens: int = 800):
+        """只读：拼装注入文本，不修改任何权重。复习请用 review()。"""
         parts = []
         per = self.persona()
         if per:
             parts.append("【人设】\n" + per["text"])
-        stable = [x for x in self.stable_list() if not x.get("kind") == "persona"]
+        stable = [x for x in self.stable_list() if x.get("kind") != "persona"]
         if stable:
             parts.append("【稳定记忆】\n" + "\n".join(f"- {x['text']}" for x in stable[-30:]))
+
+        # 事件：有查询就按相关过滤，否则只给最近 3 条
+        events = self.timeline(limit=30)
+        if query:
+            events = [e for e in events if self._match(query, e.get("actor", "") + e.get("object", "") + e.get("action", ""))]
+        events = events[-3:]
+        if events:
+            parts.append("【最近事件】\n" + "\n".join(
+                f"- {e['when']} {e['actor']}{e['action']}{e.get('object','')}" for e in events))
+
+        # 人物事实：有查询按相关过滤，否则只给权重前 3
+        facts = self.fact_top(30)
+        if query:
+            facts = [x for x in facts if self._match(query, x.get("entity", "") + x.get("text", ""))]
+            facts = facts[:8]
+        else:
+            facts = facts[:3]
+        if facts:
+            parts.append("【关于人物】\n" + "\n".join(
+                f"- {(x.get('entity') or '某人')}：{x['text']}" for x in facts))
+
         todos = self.todo_list()
         if todos:
             parts.append("【待办】\n" + "\n".join(
                 f"- {x['text']}" + (f"（截止 {x['due']}）" if x.get("due") else "") for x in todos[:15]))
+
         recent = self.recent_list()
         if recent:
             parts.append("【最近】\n" + "\n".join(f"- {x['text']}" for x in recent[-15:]))
-        events = self.timeline(limit=5)
-        if events:
-            lines = [f"- {e['when']} {e['actor']}{e['action']}{e.get('object','')}" for e in events]
-            parts.append("【最近事件】\n" + "\n".join(lines))
-        facts = self.fact_top(12)
-        if facts:
-            lines = []
-            for x in facts:
-                who = x.get("entity") or "某人"
-                lines.append(f"- {who}：{x['text']}")
-                # 间隔重复：被注入即视为复习
-                if not x.get("protected"):
-                    x["score"] = min(5.0, round(float(x.get("score", 1.0)) + 0.2, 3))
-                    x["last_hit"] = time.strftime("%Y-%m-%d %H:%M")
-            _save(self.facts, [x for x in self.fact_list(True)])
-            parts.append("【关于人物】\n" + "\n".join(lines))
+
         hits = self.block_search(query) if query else []
         if hits:
-            parts.append("【相关归档】\n" + "\n".join(f"- {b.get('summary','')}" for b in hits))
+            parts.append("【相关归档】\n" + "\n".join(f"- {b.get('summary','')}" for b in hits[:3]))
+
         if query and not parts:
             parts.append("【元记忆】\n（关于这个问题没有可靠记忆，不要编造）")
         text = "\n\n".join(parts)
-        # 粗略按 4 字符 ≈ 1 token 截断
-        limit = max_tokens * 4
-        return text[:limit]
+        return text[:max_tokens * 4]
+
+    def review(self, query: str = "", limit: int = 8):
+        """复习：把被检索到的事实权重 +0.2（显式调用，不在 inject 里偷偷做）。"""
+        facts = self.fact_top(30)
+        if query:
+            facts = [x for x in facts if self._match(query, x.get("entity", "") + x.get("text", ""))]
+        facts = facts[:limit]
+        data = _load(self.facts, [])
+        ids = {x["id"] for x in facts}
+        for x in data:
+            if x.get("id") in ids and not x.get("protected"):
+                x["score"] = min(5.0, round(float(x.get("score", 1.0)) + 0.2, 3))
+                x["last_hit"] = time.strftime("%Y-%m-%d %H:%M")
+        with self._locked():
+            _save(self.facts, data)
+        return len(ids)
+
+
+    # ---------- 带锁的写操作 ----------
+    def stable_add(self, *a, **k):
+        with self._locked():
+            return self.stable_add_raw(*a, **k)
+
+    def todo_add(self, *a, **k):
+        with self._locked():
+            return self.todo_add_raw(*a, **k)
+
+    def recent_add(self, *a, **k):
+        with self._locked():
+            return self.recent_add_raw(*a, **k)
+
+    def block_add(self, *a, **k):
+        with self._locked():
+            return self.block_add_raw(*a, **k)
+
+    def event_add(self, *a, **k):
+        with self._locked():
+            return self.event_add_raw(*a, **k)
+
+    def fact_add(self, *a, **k):
+        with self._locked():
+            return self.fact_add_raw(*a, **k)
+
+    def fact_hit(self, *a, **k):
+        with self._locked():
+            return self.fact_hit_raw(*a, **k)
+
+    def fact_decay(self, *a, **k):
+        with self._locked():
+            return self.fact_decay_raw(*a, **k)
+
+    def pending_add(self, *a, **k):
+        with self._locked():
+            return self.pending_add_raw(*a, **k)
+
+    def pending_approve(self, *a, **k):
+        with self._locked():
+            return self.pending_approve_raw(*a, **k)
+
+    def pending_reject(self, *a, **k):
+        with self._locked():
+            return self.pending_reject_raw(*a, **k)
 
     # ---------- 审计 ----------
     def log(self, msg: str):
