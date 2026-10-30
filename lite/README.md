@@ -62,6 +62,16 @@ python -m memblocks.cli janitor
 
 不会直接拒绝写入——拒绝会让人当场卡住。
 
+## 超长直接报错
+
+单条超过上限（稳定/待办 200 字、块 2000 字）不再静默截断，
+直接抛 `ValueError`，调用方自己决定拆分还是拒绝。
+
+```bash
+$ python -m memblocks.cli stable add "$(python -c 'print("x"*201)')"
+{"error": "稳定记忆 超长：201 > 200 字，请先拆分"}
+```
+
 ## 快照
 
 每次 `janitor` 前自动快照，只保留**最近 3 份**。
