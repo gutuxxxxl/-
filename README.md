@@ -401,3 +401,16 @@ python -m unittest discover -s tests -v
 - 大块只报不拆：超 800 字自动拆成两块
 - 检索把字段名当关键词：只索引 summary/topic/objects/synonyms，同义词双倍权重
 - CLI 默认目录跟当前路径走：改为 `~/.memblocks`
+
+## 并发回归测试
+
+```bash
+python -m unittest tests.test_concurrency -v
+```
+
+4 个进程各写 60 条事实，断言最终 240 条一条不少、且无重复。
+
+- Windows：`msvcrt` 文件锁
+- Linux：`fcntl.flock` 回退
+
+本地 Windows 实测通过（3.9s / 240 条）。
