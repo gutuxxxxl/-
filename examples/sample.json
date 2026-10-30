@@ -1,0 +1,16 @@
+{
+  "stable": [
+    {"text": "用户是律师，在邹城执业", "tags": ["身份", "地域"]}
+  ],
+  "todo": [
+    {"text": "每周六发律师介绍视频", "due": "2026-11-01", "done": false}
+  ],
+  "blocks": [
+    {
+      "id": "block-20261031-001",
+      "summary": "讨论用分层记忆替代全量上下文，确定最小版方案",
+      "tags": {"topic": "上下文管理", "objects": ["DSH"], "conclusion": "采用分层记忆", "type": "decision", "synonyms": ["记忆分块"]},
+      "time": "2026-10-31 04:44"
+    }
+  ]
+}
