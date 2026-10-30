@@ -12,18 +12,18 @@ PATTERNS = [
     (r"(?:我|主人|管理员)?的?生日(?:是|在)?\s*([0-9]{1,2}\s*月\s*[0-9]{1,2}\s*[日号])", "生日"),
     # 职业
     (r"(?:我|主人|管理员)?(?:是|做|当|从事)([^，。,\n]{2,12}?(?:律师|医生|老师|程序员|设计师|会计|警察|工程师|老板|学生))", "职业"),
-    # 位置
-    (r"(?:我|主人|管理员)?(?:在|住在|来自)([^，。,\n]{2,10}?(?:市|县|区|镇|省))", "位置"),
+    # 位置（要求地名后缀，且排除小区/门口这类非地名）
+    (r"(?:我|主人|管理员)?(?:在|住在|来自)([^，。,\n]{1,8}?(?:市|县|区|镇|省|城|州))", "位置"),
     # 关系
     (r"([\u4e00-\u9fa5]{2,4})(?:是|叫)(?:我|主人)的?(同事|朋友|客户|家人|同学|合伙人)", "关系"),
-    # 偏好
-    (r"(?:我|主人|管理员)?(?:喜欢|讨厌|不喜欢)([^，。,\n]{2,16})", "偏好"),
+    # 偏好（要求 2~10 字，排除指代词）
+    (r"(?:我|主人|管理员)?(不喜欢|喜欢|讨厌)([^，。,\n]{2,10})", "偏好"),
 ]
 
 
 def _entity_of(line: str) -> str:
     for w in OWNER_WORDS:
-        if re.search(r"(?:^|[，。,\s])" + re.escape(w) + r"(?:的|是|在|喜欢|讨厌|生日)", line):
+        if re.search(r"(?:^|[，。,\s])" + re.escape(w) + r"(?:的|是|在|喜欢|不喜欢|讨厌|生日)", line):
             return "主人"
     m = re.match(r"([\u4e00-\u9fa5]{2,4})(?:的|是|叫)", line.strip())
     if m and m.group(1) not in OWNER_WORDS:
@@ -51,12 +51,18 @@ def extract(text: str):
             elif kind == "职业":
                 text_out = f"职业是{value}"
             elif kind == "位置":
+                if any(bad in value for bad in ("小区", "门口", "家", "店", "公司", "学校", "医院", "路上")):
+                    continue
                 text_out = f"在{value}"
             elif kind == "关系":
                 who = entity or "某人"
                 text_out = f"{who}的关系：{m.group(2)}"
             else:
-                text_out = f"喜欢{value}"
+                verb = m.group(1)
+                val = m.group(2)
+                if any(bad in val for bad in ("这个", "那个", "上次", "这次", "这样", "那种")):
+                    continue
+                text_out = f"{verb}{val}"
             out.append({
                 "text": text_out,
                 "entity": entity or "",
