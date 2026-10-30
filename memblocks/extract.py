@@ -11,7 +11,7 @@ PATTERNS = [
     # 生日
     (r"(?:我|主人|管理员)?的?生日(?:是|在)?\s*([0-9]{1,2}\s*月\s*[0-9]{1,2}\s*[日号])", "生日"),
     # 职业
-    (r"(?:我|主人|管理员)?(?:是|做|当|从事)([^，。,\n]{2,12}?(?:律师|医生|老师|程序员|设计师|会计|警察|工程师|老板|学生))", "职业"),
+    (r"(?:我|主人|管理员)?(?:在[^，。,\n]{0,8})?(?:是|做|当|从事)([^，。,\n]{0,10}?(?:律师|医生|老师|程序员|设计师|会计|警察|工程师|老板|学生))", "职业"),
     # 位置（要求地名后缀，且排除小区/门口这类非地名）
     (r"(?:我|主人|管理员)?(?:在|住在|来自)([^，。,\n]{1,8}?(?:市|县|区|镇|省|城|州))", "位置"),
     # 关系
@@ -25,7 +25,7 @@ def _entity_of(line: str) -> str:
     for w in OWNER_WORDS:
         if re.search(r"(?:^|[，。,\s])" + re.escape(w) + r"(?:的|是|在|喜欢|不喜欢|讨厌|生日)", line):
             return "主人"
-    m = re.match(r"([\u4e00-\u9fa5]{2,4})(?:的|是|叫)", line.strip())
+    m = re.match(r"([\u4e00-\u9fa5]{2,4}?)(?:的|是|叫)", line.strip())
     if m and m.group(1) not in OWNER_WORDS:
         return m.group(1)
     return ""
@@ -70,7 +70,6 @@ def extract(text: str):
                 "protected": entity in ("主人",) or (not entity and "主人" in line),
                 "source": line[:120],
             })
-            break
     # 去重
     seen, uniq = set(), []
     for x in out:
