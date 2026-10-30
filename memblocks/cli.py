@@ -47,6 +47,9 @@ def main():
     i.add_argument("--query", default="")
     i.add_argument("--max-tokens", type=int, default=800)
 
+    d = sub.add_parser("doctor")
+    d.add_argument("--purge-days", type=int, default=3)
+
     j = sub.add_parser("janitor")
     j.add_argument("--dry-run", action="store_true")
 
@@ -58,7 +61,10 @@ def main():
         return [x.strip() for x in v.split(",") if x.strip()]
 
     if args.cmd == "init":
-        print(json.dumps(st.init(), ensure_ascii=False))
+        info = st.init()
+        print(json.dumps(info, ensure_ascii=False))
+        if info.get("hint"):
+            print(info["hint"])
     elif args.cmd == "stable":
         if args.action == "add":
             print(json.dumps(st.stable_add(args.text, tags(args.tags)), ensure_ascii=False))
@@ -97,6 +103,9 @@ def main():
             print(json.dumps(st.recent_list(), ensure_ascii=False, indent=2))
     elif args.cmd == "inject":
         print(st.inject(args.query, args.max_tokens))
+    elif args.cmd == "doctor":
+        from .janitor import Janitor as _J
+        print(json.dumps(_J(st, True).run(), ensure_ascii=False, indent=2))
     elif args.cmd == "janitor":
         if not args.dry_run:
             snap = st.snapshot()
