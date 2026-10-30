@@ -1,172 +1,97 @@
-from datetime import date, datetime
+"""维护：清理过期待办、合并重复稳定项、执行上限淘汰。"""
+import json
+from datetime import date
 
-from .store import Store
+from .store import STABLE_CAP, _norm, _save
 
 
 class Janitor:
-    """记忆维护：只读报告 + 低风险自动修复。"""
-
     MAX_CHANGES = 10
 
-    def __init__(self, store: Store, dry_run: bool = False, purge_days: int = 3):
+    def __init__(self, store, dry_run=False, purge_days=3):
         self.s = store
         self.dry_run = dry_run
         self.purge_days = purge_days
         self.changes = 0
-        self.report = {
-            "blocks": 0, "stable": 0, "todos": 0, "recent": 0,
-            "expired_todos": 0, "orphans": 0, "duplicate_tags": [],
-            "large_blocks": 0, "warnings": [],
-        }
+        self.report = {}
 
-    def _change(self, msg: str):
-        if self.changes >= self.MAX_CHANGES:
-            self.report["warnings"].append("达到单次修改上限，停止：" + msg)
-            return False
-        self.changes += 1
-        if not self.dry_run:
-            self.s.log(msg)
-        return True
-
-    def _parse_due(self, due: str):
+    def _due(self, s):
         try:
-            return datetime.strptime(due, "%Y-%m-%d").date()
+            return date.fromisoformat(s)
         except Exception:
             return None
 
-    def consolidate(self):
-        """巩固：合并重复事实，保留权重最高的那条。"""
-        from .store import _load, _save
-        data = _load(self.s.facts, [])
-        best = {}
-        merged = 0
-        from .store import _norm_text
-        for x in data:
-            key = (x.get("entity", ""), _norm_text(x.get("text", "")))
-            if key not in best or float(x.get("score", 0)) > float(best[key].get("score", 0)):
-                if key in best:
-                    merged += 1
-                best[key] = x
-            else:
-                merged += 1
-        if merged and not self.dry_run:
-            _save(self.s.facts, list(best.values()))
-        return merged
-
     def run(self):
+        r = {"stable": 0, "todos": 0, "expired": 0, "purged": 0,
+             "stable_merged": 0, "stable_evicted": 0, "warnings": []}
         if not self.dry_run:
-            self.report["snapshot"] = str(self.s.snapshot())
-        blocks = self.s.block_list()
-        stable = self.s.stable_list()
-        todos = self.s.todo_list()
-        recent = self.s.recent_list()
+            r["snapshot"] = str(self.s.snapshot())
 
-        self.report.update(blocks=len(blocks), stable=len(stable), todos=len(todos), recent=len(recent))
-
-        # 1. 过期待办 → 归档
         today = date.today()
-        keep, expired = [], []
+        todos = self.s.todo_list(True)
+        keep, drop = [], []
         for t in todos:
-            d = self._parse_due(t.get("due", ""))
-            if d and d < today and not t.get("done"):
-                expired.append(t)
+            d = self._due(t.get("due", ""))
+            if t.get("done") and d and (today - d).days >= self.purge_days:
+                drop.append(t)
             else:
                 keep.append(t)
-        self.report["expired_todos"] = len(expired)
-        from .store import _save
-        if expired and not self.dry_run:
-            if self._change(f"归档过期待办 {len(expired)} 条"):
-                for t in expired:
-                    t["done"] = True
-                _save(self.s.todo, keep + expired)
+        r["purged"] = len(drop)
+        if drop and not self.dry_run:
+            with open(self.s.archive, "a", encoding="utf-8") as f:
+                for t in drop:
+                    f.write(json.dumps(t, ensure_ascii=False) + "\n")
+            _save(self.s.todo, keep)
+            self.changes += 1
 
-        # 1b. 短期记忆：过期待办超过 purge_days 天后自动删除
-        all_todos = self.s.todo_list(True)
-        alive = []
-        purged_items = []
-        for t in all_todos:
-            d = self._parse_due(t.get("due", ""))
-            if t.get("done") and d and (today - d).days >= self.purge_days:
-                purged_items.append(t)
-                continue
-            alive.append(t)
-        self.report["purged_todos"] = len(purged_items)
-        if purged_items and not self.dry_run:
-            import json as _json
-            with open(self.s.root / "todo_archive.jsonl", "a", encoding="utf-8") as f:
-                for t in purged_items:
-                    f.write(_json.dumps(t, ensure_ascii=False) + "\n")
-            if self._change(f"删除过期 {self.purge_days} 天的待办 {len(purged_items)} 条（已归档）"):
-                _save(self.s.todo, alive)
+        # 过期未完成的标 done
+        alive = self.s.todo_list(True)
+        changed = 0
+        for t in alive:
+            d = self._due(t.get("due", ""))
+            if d and d < today and not t.get("done"):
+                t["done"] = True
+                changed += 1
+        r["expired"] = changed
+        if changed and not self.dry_run:
+            _save(self.s.todo, alive)
+            self.changes += 1
 
-        # 2. 孤儿引用
-        for b in blocks:
-            src = (b.get("source") or "").strip()
-            if src and not (self.s.root / src).exists():
-                self.report["orphans"] += 1
-
-        # 3. 重复标签（简单按 topic 统计）
-        topics = {}
-        for b in blocks:
-            t = (b.get("tags") or {}).get("topic", "").strip()
-            if t:
-                topics[t] = topics.get(t, 0) + 1
-        for t, n in sorted(topics.items(), key=lambda x: -x[1]):
-            if n > 1:
-                self.report["duplicate_tags"].append({"topic": t, "count": n})
-
-        # 4. 超大块
-        split = 0
-        for b in blocks:
-            if len(b.get("summary", "")) > 800 and not self.dry_run:
-                from .store import _save
-                head, tail = b["summary"][:600], b["summary"][600:]
-                b["summary"] = head + "…"
-                b["split"] = True
-                _save(self.s.blocks / f"{b['id']}.json", b)
-                new = dict(b)
-                new["id"] = b["id"] + "-b"
-                new["summary"] = "…" + tail
-                _save(self.s.blocks / f"{new['id']}.json", new)
-                split += 1
-            elif len(b.get("summary", "")) > 800:
-                split += 1
-        self.report["large_blocks"] = split
-
-        # 5. 稳定区近重复合并
-        from .store import _norm_text, _save as _save2
-        seen, merged_stable = {}, 0
+        # 稳定区：近重复合并
+        stable = self.s.stable_list()
+        seen, merged = {}, 0
         for x in stable:
-            key = _norm_text(x.get("text", ""))
-            if key in seen:
-                merged_stable += 1
+            k = _norm(x.get("text"))
+            if k in seen:
+                seen[k]["weight"] = round(float(seen[k].get("weight", 1.0)) + 0.1, 2)
+                merged += 1
             else:
-                seen[key] = x
-        if merged_stable and not self.dry_run:
-            _save2(self.s.stable, list(seen.values()))
-        self.report["stable_merged"] = merged_stable
+                seen[k] = x
+        r["stable_merged"] = merged
+        if merged and not self.dry_run:
+            _save(self.s.stable, list(seen.values()))
+            self.changes += 1
 
-        # 5b. 稳定事实膨胀
-        if len(stable) > 50:
-            self.report["warnings"].append(f"稳定事实 {len(stable)} 条，超过建议上限 50，建议合并")
+        # 稳定区：超上限按权重淘汰
+        stable = self.s.stable_list()
+        evicted = 0
+        if len(stable) > STABLE_CAP:
+            pool = stable
+            while len(pool) > STABLE_CAP:
+                victim = min(pool, key=lambda x: (float(x.get("weight", 1.0)), x.get("at", "")))
+                if victim.get("protected"):
+                    break
+                pool.remove(victim)
+                evicted += 1
+            if evicted and not self.dry_run:
+                _save(self.s.stable, pool)
+                self.s.log(f"warn: 稳定区超限，淘汰 {evicted} 条")
+                self.changes += 1
+        r["stable_evicted"] = evicted
+        if len(stable) >= STABLE_CAP:
+            r["warnings"].append(f"稳定区 {len(stable)}/{STABLE_CAP}，接近或达到上限")
 
-        # 6. 人物事实衰减（非保护）
-        if not self.dry_run:
-            left, dropped = self.s.fact_decay()
-            self.report["facts_left"] = left
-            self.report["facts_decayed"] = dropped
-        else:
-            self.report["facts_left"] = len(self.s.fact_list())
-            self.report["facts_decayed"] = 0
-
-        # 7. 巩固：合并重复事实
-        consolidated = self.consolidate()
-        self.report["consolidated"] = consolidated
-        if consolidated and not self.dry_run:
-            self._change(f"巩固合并重复事实 {consolidated} 条")
-
+        r.update(stable=len(self.s.stable_list()), todos=len(self.s.todo_list()))
         if self.changes >= self.MAX_CHANGES:
-            self.report["stopped_early"] = True
-        if not self.dry_run and self.changes:
-            self.report["changes"] = self.changes
-        return self.report
+            r["stopped_early"] = True
+        return r
