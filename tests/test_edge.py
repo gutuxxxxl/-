@@ -104,5 +104,26 @@ class TestEdge(unittest.TestCase):
         self.assertLessEqual(a["purged"], 1)
 
 
+class TestTailAndDates(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.st = Store(Path(self.tmp.name))
+        self.st.init()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_inject_keeps_tail_keyword(self):
+        self.st.block_add("开头" * 300 + "关键字在尾巴上" + "结尾" * 300)
+        out = self.st.inject("尾巴", 800)
+        self.assertIn("关键字在尾巴上", out)
+
+    def test_date_variants(self):
+        r = date(2026, 10, 31)
+        self.assertEqual(normalize("十二月二十八", r), "2026-12-28")
+        self.assertEqual(normalize("二十八号", r), "2026-10-28")
+        self.assertEqual(normalize("28号", r), "2026-10-28")
+
+
 if __name__ == "__main__":
     unittest.main()
