@@ -90,7 +90,7 @@ store.restore("memories/snapshots/snap-20261031-060000-ab12")
 
 ```bash
 python -m unittest discover -s tests -v
-# 16 tests OK
+# 37 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
@@ -105,7 +105,9 @@ memblocks/
   cli.py        命令行
   timeparse.py  相对时间
 tests/
-  test_lite.py  16 个测试
+  test_lite.py    基础功能（16）
+  test_stress.py  同秒 300 块 / 5000 字 / 4 进程 / 坏 JSON / 快照保留（10）
+  test_edge.py    中文路径 / emoji / 快照并发 / 恢复 / CLI 退出码（11）
 ```
 
 ## 许可证
