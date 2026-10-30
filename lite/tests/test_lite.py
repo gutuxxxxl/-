@@ -49,6 +49,10 @@ class TestStable(Base):
         with self.assertRaises(ValueError):
             self.st.stable_add("   ")
 
+    def test_overlong_rejected(self):
+        with self.assertRaises(ValueError):
+            self.st.stable_add("x" * 201)
+
 
 class TestTodo(Base):
     def test_due_normalized(self):
