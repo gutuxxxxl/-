@@ -133,7 +133,20 @@ class Janitor:
                 split += 1
         self.report["large_blocks"] = split
 
-        # 5. 稳定事实膨胀
+        # 5. 稳定区近重复合并
+        from .store import _norm_text, _save as _save2
+        seen, merged_stable = {}, 0
+        for x in stable:
+            key = _norm_text(x.get("text", ""))
+            if key in seen:
+                merged_stable += 1
+            else:
+                seen[key] = x
+        if merged_stable and not self.dry_run:
+            _save2(self.s.stable, list(seen.values()))
+        self.report["stable_merged"] = merged_stable
+
+        # 5b. 稳定事实膨胀
         if len(stable) > 50:
             self.report["warnings"].append(f"稳定事实 {len(stable)} 条，超过建议上限 50，建议合并")
 
