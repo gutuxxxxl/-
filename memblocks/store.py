@@ -15,6 +15,16 @@ def _load(path: Path, default):
         return default
 
 
+def _norm_text(text: str) -> str:
+    import re
+    t = (text or "").strip().lower()
+    t = t.replace("号", "日").replace("是", "").replace("为", "")
+    t = re.sub(r"[\s\u3000]+", "", t)
+    t = re.sub(r"[，。,.、；;：:！!？?\-—_()（）\[\]【】]", "", t)
+    t = re.sub(r"([0-9]{1,2})月([0-9]{1,2})日", lambda m: f"{int(m.group(1))}月{int(m.group(2))}日", t)
+    return t
+
+
 def _save(path: Path, data):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -153,6 +163,7 @@ class Store:
 
     # ---------- 滚动关键词 ----------
     def recent_add_raw(self, text: str, limit: int = 30):
+        self._rotate(self.recent)
         line = json.dumps({"at": time.strftime("%Y-%m-%d %H:%M"), "text": text}, ensure_ascii=False)
         with open(self.recent, "a", encoding="utf-8") as f:
             f.write(line + "\n")
@@ -521,7 +532,22 @@ class Store:
             return self.pending_reject_raw(*a, **k)
 
     # ---------- 审计 ----------
+    def _rotate(self, path, max_bytes: int = 1_048_576):
+        try:
+            if path.exists() and path.stat().st_size > max_bytes:
+                for i in range(4, 0, -1):
+                    src = path.with_suffix(path.suffix + f".{i}")
+                    dst = path.with_suffix(path.suffix + f".{i+1}")
+                    if src.exists():
+                        if dst.exists():
+                            dst.unlink()
+                        src.rename(dst)
+                path.rename(path.with_suffix(path.suffix + ".1"))
+        except Exception:
+            pass
+
     def log(self, msg: str):
+        self._rotate(self.audit)
         with open(self.audit, "a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
 
