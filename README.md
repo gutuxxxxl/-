@@ -159,3 +159,33 @@ python -m memblocks.cli persona set "你是小鲸，一只蓝发鲸鱼娘……"
 ```
 
 人设放在最前，保证缓存前缀稳定，不会每轮抖动。
+
+## 接入自检
+
+`init` 会检查人设是否已导入：
+
+```bash
+python -m memblocks.cli init
+# {"ok": true, "persona": false, "hint": "未检测到人设。建议先导入：..."}
+```
+
+没设置人设时会直接给出提示命令，避免"装了但没生效"。
+
+## 短期记忆：待办过期自动删除
+
+待办就是短期记忆，可以随时在聊天里加：
+
+```bash
+python -m memblocks.cli todo add "明天下午给客户回电话" --due 2026-11-01
+```
+
+维护程序（janitor）会：
+
+1. 过期当天的待办 → 标记完成
+2. 超过 `--purge-days`（默认 3 天）→ **自动删除**，不留垃圾
+
+```bash
+python -m memblocks.cli janitor              # 自动维护
+python -m memblocks.cli janitor --dry-run    # 只看不改
+python -m memblocks.cli doctor               # 只读体检
+```
