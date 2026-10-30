@@ -377,3 +377,27 @@ python -m unittest discover -s tests -v
 
 判据是出现「我 / 本人 / 被」才按当事人视角处理。
 更准的做法是让模型打标，`emotions.py` 里留了替换点。
+
+## 预算与优先级（0.3 起）
+
+`inject(query, max_tokens)` 现在真的按预算裁剪，顺序固定：
+
+```
+人设 → 重要（protected）→ 稳定记忆 → 待办 → 最近事件 → 关于人物 → 最近 → 相关归档
+```
+
+- 预算 = `max_tokens × 2` 字符（粗略折算）
+- **保护性内容（人设、重要事实）优先，不会因为查询不相关被筛掉**
+- 稳定区不再静默截断 30 条，而是按预算装，装不下会少给后面层级
+
+## 修过的坑（0.3）
+
+- Linux 上锁失效：`msvcrt` 换 `fcntl` 回退
+- 写入时重复事实：同 entity+text 直接加权，不再追加
+- `pending_add` 传单个 dict 会崩：已兼容
+- 衰减时间解析失败静默：改为告警并记录
+- 过期待办直接删：改为先写 `todo_archive.jsonl` 再删
+- janitor 快照没生成：现在每次自动快照，并新增 `restore` 恢复
+- 大块只报不拆：超 800 字自动拆成两块
+- 检索把字段名当关键词：只索引 summary/topic/objects/synonyms，同义词双倍权重
+- CLI 默认目录跟当前路径走：改为 `~/.memblocks`
