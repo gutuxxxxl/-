@@ -1,31 +1,27 @@
-# memblocks-lite
+# memblocks
 
-> 三层记忆，够用就好。稳定区 / 待办 / 归档块。
+> 三层记忆：稳定区 / 待办 / 归档。给长期对话用的最小实现。
 
-这是 `dsh-memory-blocks` 的精简版：砍掉人物事实、时间线、自动抽取，
-只保留能长期站住的内核。
+## 这是什么
 
-## 三层
+一个零依赖的 Python 记忆包，用来替代「把整段聊天历史塞进上下文」：
 
 | 层 | 内容 | 规则 |
 | --- | --- | --- |
-| **稳定区** | 长期事实（身份、偏好、约定） | 上限 100 条，写满按权重淘汰最老的，并告警 |
+| **稳定区** | 长期事实（身份、偏好、约定） | 上限 100 条，写满按权重淘汰最老的，并写告警 |
 | **待办** | 短期任务 | 带截止日期，过期归档后删除 |
-| **归档块** | 对话摘要 | 超 800 字自动拆两块 |
+| **归档块** | 对话摘要 | 超 800 字自动拆块 |
 
-## 为什么砍
-
-v0.x 里的人物事实、时间线、规则抽取，三个功能各带出两条以上 bug，
-修下去是补丁追补丁。砍掉之后，剩下的三层每一条都能说清楚行为边界。
+没有人物事实、没有时间线、没有自动抽取——那三块修了几轮仍有 bug，不如不做。
 
 ## 安装
 
-无第三方依赖，Python 3.10+。
+纯标准库，Python 3.10+，不用 pip。
 
 ```bash
-git clone https://github.com/gutuxxxxl/-.git
-cd -
-python -m memlite.cli init
+git clone https://github.com/gutuxxxxl/-.git memblocks
+cd memblocks
+python -m memblocks.cli init
 ```
 
 ## 用法
@@ -33,10 +29,10 @@ python -m memlite.cli init
 ```bash
 # 稳定区
 python -m memblocks.cli stable add "我在邹城做律师" --tags 身份
-python -m memblocks.cli stable add "人设：你是小鲸" --weight 9 --tags 人设
+python -m memblocks.cli stable add "人设：你是小鲸" --weight 9
 python -m memblocks.cli stable list
 
-# 待办（截止日期支持「下周三」「一个月后」）
+# 待办（支持「下周三」「一个月后」「十二月二十八号」）
 python -m memblocks.cli todo add "给客户回电话" --due 下周三
 python -m memblocks.cli todo done --id td-xxxx
 
@@ -64,8 +60,7 @@ python -m memblocks.cli janitor
 
 ## 超长直接报错
 
-单条超过上限（稳定/待办 200 字、块 2000 字）不再静默截断，
-直接抛 `ValueError`，调用方自己决定拆分还是拒绝。
+单条超过上限（稳定/待办 200 字、块 2000 字）不再静默截断，直接抛 `ValueError`。
 
 ```bash
 $ python -m memblocks.cli stable add "$(python -c 'print("x"*201)')"
@@ -74,11 +69,19 @@ $ python -m memblocks.cli stable add "$(python -c 'print("x"*201)')"
 
 ## 快照
 
-每次 `janitor` 前自动快照，只保留**最近 3 份**。
+每次 `janitor` 前自动快照，保留**最近 3 份**，目录名带 uuid 防同秒覆盖。
 
 ```python
-store.restore("memories/snapshots/snap-20261031-060000")
+store.restore("memories/snapshots/snap-20261031-060000-ab12")
 ```
+
+## 健壮性
+
+- JSON 损坏不静默：改名为 `.bad-时间戳` 并抛错
+- 快照包含全部数据文件
+- 块先按 800 字切分，再逐块校验
+- 支持中文数字日期：「十二月二十八号」→ 2026-12-28
+- 写入加文件锁（Windows `msvcrt` / Linux `fcntl`）
 
 ## 测试
 
@@ -87,8 +90,8 @@ python -m unittest discover -s tests -v
 # 16 tests OK
 ```
 
-覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、
-块拆分、注入预算、相对时间。
+覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
+注入预算、相对时间、JSON 损坏、快照完整性。
 
 ## 目录
 
@@ -99,23 +102,9 @@ memblocks/
   cli.py        命令行
   timeparse.py  相对时间
 tests/
-  test_lite.py  11 个测试
+  test_lite.py  16 个测试
 ```
-
-## 不做什么
-
-- 不抽人物事实（规则抽取覆盖不够，模型打标更合适）
-- 不建时间线（事件层需要更多设计）
-- 不自动从对话里抽内容（同上）
 
 ## 许可证
 
 MIT
-
-## 健壮性（第三轮 review）
-
-- JSON 损坏不再静默当空：文件改名为 `.bad-时间戳` 并抛错
-- 快照包含全部数据文件（stable / todo / archive）
-- 块先按 800 字切分，再逐块校验，不先截断
-- 支持中文数字日期：「十二月二十八号」→ 2026-12-28
-- 快照目录名带 uuid 后缀，同秒两次不会覆盖
