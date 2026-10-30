@@ -48,11 +48,15 @@ def main():
     i.add_argument("--max-tokens", type=int, default=800)
 
     f = sub.add_parser("fact")
-    f.add_argument("action", choices=["add", "list", "hit", "top"])
+    f.add_argument("action", choices=["add", "list", "hit", "top", "pending", "approve", "reject"])
     f.add_argument("--text", default="")
     f.add_argument("--entity", default="")
     f.add_argument("--tags", default="")
     f.add_argument("--id", default="")
+
+    e = sub.add_parser("extract")
+    e.add_argument("--file", default="")
+    e.add_argument("--text", default="")
 
     d = sub.add_parser("doctor")
     d.add_argument("--purge-days", type=int, default=3)
@@ -117,8 +121,23 @@ def main():
             print(json.dumps(st.fact_hit(args.id), ensure_ascii=False, indent=2))
         elif args.action == "top":
             print(json.dumps(st.fact_top(), ensure_ascii=False, indent=2))
+        elif args.action == "pending":
+            print(json.dumps(st.pending_list(), ensure_ascii=False, indent=2))
+        elif args.action == "approve":
+            print(json.dumps(st.pending_approve(args.id), ensure_ascii=False, indent=2))
+        elif args.action == "reject":
+            print(st.pending_reject(args.id))
         else:
             print(json.dumps(st.fact_list(), ensure_ascii=False, indent=2))
+    elif args.cmd == "extract":
+        from .extract import extract
+        from pathlib import Path as _P
+        text = args.text
+        if args.file:
+            text = _P(args.file).read_text(encoding="utf-8")
+        items = extract(text or "")
+        n = st.pending_add(items)
+        print(json.dumps({"extracted": len(items), "added": n, "items": items}, ensure_ascii=False, indent=2))
     elif args.cmd == "doctor":
         from .janitor import Janitor as _J
         print(json.dumps(_J(st, True).run(), ensure_ascii=False, indent=2))
