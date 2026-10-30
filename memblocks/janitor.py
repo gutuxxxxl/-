@@ -23,7 +23,8 @@ class Janitor:
 
     def run(self):
         r = {"stable": 0, "todos": 0, "expired": 0, "purged": 0,
-             "stable_merged": 0, "stable_evicted": 0, "warnings": []}
+             "stable_merged": 0, "stable_trimmed": 0, "warnings": [],
+             "cap_note": "上限 100 条在 stable_add 写入时执行，janitor 只做兜底"}
         if not self.dry_run:
             r["snapshot"] = str(self.s.snapshot())
 
@@ -87,7 +88,7 @@ class Janitor:
                 _save(self.s.stable, pool)
                 self.s.log(f"warn: 稳定区超限，淘汰 {evicted} 条")
                 self.changes += 1
-        r["stable_evicted"] = evicted
+        r["stable_trimmed"] = evicted
         if len(stable) >= STABLE_CAP:
             r["warnings"].append(f"稳定区 {len(stable)}/{STABLE_CAP}，接近或达到上限")
 
