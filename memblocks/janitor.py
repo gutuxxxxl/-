@@ -40,8 +40,9 @@ class Janitor:
         data = _load(self.s.facts, [])
         best = {}
         merged = 0
+        from .store import _norm_text
         for x in data:
-            key = (x.get("entity", ""), x.get("text", ""))
+            key = (x.get("entity", ""), _norm_text(x.get("text", "")))
             if key not in best or float(x.get("score", 0)) > float(best[key].get("score", 0)):
                 if key in best:
                     merged += 1
