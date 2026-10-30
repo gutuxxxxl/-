@@ -111,6 +111,7 @@ class Store:
 
     # ---------- 稳定事实 ----------
     def stable_add_raw(self, text: str, tags=None, protected: bool = False):
+        text = (text or "")[:200]
         data = _load(self.stable, [])
         item = {"text": text, "tags": tags or [], "protected": protected,
                 "at": time.strftime("%Y-%m-%d %H:%M")}
@@ -143,6 +144,10 @@ class Store:
 
     # ---------- 待办 ----------
     def todo_add_raw(self, text: str, due: str = ""):
+        from .timeparse import normalize as _norm
+        text = (text or "")[:200]
+        if due:
+            due = _norm(due) or due
         data = _load(self.todo, [])
         item = {"text": text, "due": due, "done": False, "at": time.strftime("%Y-%m-%d %H:%M")}
         data.append(item)
@@ -185,6 +190,7 @@ class Store:
         return _load(self.config, {}).get("owner_names", ["主人", "我"])
 
     def fact_add_raw(self, text: str, entity: str = "", tags=None, protected=None, emotion=None):
+        text = (text or "")[:200]
         from .emotions import score as _emo
         emotion = emotion or _emo(text)
         if protected is None:
@@ -359,6 +365,7 @@ class Store:
     # ---------- 归档块 ----------
     def block_add_raw(self, summary: str, topic: str = "", type_: str = "note",
                   objects=None, conclusion: str = "", synonyms=None, source: str = ""):
+        summary = (summary or "")[:1000]
         bid = "block-" + time.strftime("%Y%m%d-%H%M%S")
         block = {
             "id": bid,
@@ -407,67 +414,75 @@ class Store:
         return any(g in blob for g in grams)
 
     def inject(self, query: str = "", max_tokens: int = 800):
-        """只读：按优先级拼装，受 max_tokens 约束。保护性内容优先。"""
-        budget = max(120, int(max_tokens)) * 2  # 粗略：2 字符 ≈ 1 token
-        used = 0
+        """只读：按优先级拼装，每段有配额，段内按行裁剪。"""
+        budget = max(120, int(max_tokens)) * 2  # 字符 ≈ token × 2
         parts = []
+        used = 0
 
-        def add(title, lines):
+        def add(title, lines, ratio=0.5):
             nonlocal used
             lines = [ln for ln in lines if ln]
             if not lines:
                 return
-            block = title + "\n" + "\n".join(lines)
-            if parts and used + len(block) > budget:
+            cap = int(budget * ratio)
+            seg, seg_len = [], 0
+            for ln in lines:
+                room = min(cap - seg_len, budget - used - len(title) - 2)
+                if room <= 0:
+                    break
+                if len(ln) > room:
+                    seg.append(ln[:max(0, room - 1)] + "…")
+                    seg_len += room
+                    break
+                seg.append(ln)
+                seg_len += len(ln) + 1
+            if not seg:
                 return
+            block = title + "\n" + "\n".join(seg)
             parts.append(block)
             used += len(block)
 
         per = self.persona()
         if per:
-            add("【人设】", [per["text"]])
+            add("【人设】", [per["text"]], 0.35)
 
         facts = self.fact_list()
         protected = [f for f in facts if f.get("protected")]
         if protected:
-            add("【重要】", [f"- {(f.get('entity') or '主人')}：{f['text']}" for f in protected])
+            add("【重要】", [f"- {(f.get('entity') or '主人')}：{f['text']}" for f in protected], 0.45)
 
         stable = [x for x in self.stable_list() if x.get("kind") != "persona"]
         if stable:
-            add("【稳定记忆】", [f"- {x['text']}" for x in stable])
+            add("【稳定记忆】", [f"- {x['text']}" for x in stable], 0.45)
 
         todos = self.todo_list()
         if todos:
             add("【待办】", [f"- {x['text']}" + (f"（截止 {x['due']}）" if x.get("due") else "")
-                            for x in todos])
+                            for x in todos], 0.30)
 
         events = self.timeline(limit=10)
         if query:
             events = [e for e in events
                       if self._match(query, e.get("actor", "") + e.get("object", "") + e.get("action", ""))]
-        events = events[-3:]
-        if events:
-            add("【最近事件】", [f"- {e['when']} {e['actor']}{e['action']}{e.get('object','')}" for e in events])
+        add("【最近事件】", [f"- {e['when']} {e['actor']}{e['action']}{e.get('object','')}"
+                            for e in events[-3:]], 0.25)
 
         others = [f for f in self.fact_top(20) if not f.get("protected")]
         if query:
             others = [f for f in others if self._match(query, f.get("entity", "") + f.get("text", ""))]
         else:
             others = others[:3]
-        if others:
-            add("【关于人物】", [f"- {(f.get('entity') or '某人')}：{f['text']}" for f in others])
+        add("【关于人物】", [f"- {(f.get('entity') or '某人')}：{f['text']}" for f in others], 0.30)
 
         recent = self.recent_list()
-        if recent:
-            add("【最近】", [f"- {x['text']}" for x in recent[-8:]])
+        add("【最近】", [f"- {x['text']}" for x in recent[-8:]], 0.20)
 
         hits = self.block_search(query, 3) if query else []
-        if hits:
-            add("【相关归档】", [f"- {b.get('summary','')}" for b in hits])
+        add("【相关归档】", [f"- {b.get('summary','')}" for b in hits], 0.25)
 
         if not parts:
             return "【元记忆】\n（关于这个问题没有可靠记忆，不要编造）"
-        return "\n\n".join(parts)[:budget]
+        return "\n\n".join(parts)
 
     def review(self, query: str = "", limit: int = 8):
         """复习：把被检索到的事实权重 +0.2（显式调用，不在 inject 里偷偷做）。"""
