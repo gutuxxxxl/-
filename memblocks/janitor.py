@@ -83,16 +83,20 @@ class Janitor:
         # 1b. 短期记忆：过期待办超过 purge_days 天后自动删除
         all_todos = self.s.todo_list(True)
         alive = []
-        purged = 0
+        purged_items = []
         for t in all_todos:
             d = self._parse_due(t.get("due", ""))
             if t.get("done") and d and (today - d).days >= self.purge_days:
-                purged += 1
+                purged_items.append(t)
                 continue
             alive.append(t)
-        self.report["purged_todos"] = purged
-        if purged and not self.dry_run:
-            if self._change(f"删除过期 {purged} 天的待办 {purged} 条"):
+        self.report["purged_todos"] = len(purged_items)
+        if purged_items and not self.dry_run:
+            import json as _json
+            with open(self.s.root / "todo_archive.jsonl", "a", encoding="utf-8") as f:
+                for t in purged_items:
+                    f.write(_json.dumps(t, ensure_ascii=False) + "\n")
+            if self._change(f"删除过期 {self.purge_days} 天的待办 {len(purged_items)} 条（已归档）"):
                 _save(self.s.todo, alive)
 
         # 2. 孤儿引用
