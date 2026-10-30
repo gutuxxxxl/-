@@ -12,6 +12,11 @@ def main():
 
     sub.add_parser("init")
 
+    per = sub.add_parser("persona")
+    per.add_argument("action", choices=["set", "show"])
+    per.add_argument("text", nargs="?")
+    per.add_argument("--file", default="")
+
     s = sub.add_parser("stable")
     s.add_argument("action", choices=["add", "list"])
     s.add_argument("text", nargs="?")
@@ -59,6 +64,15 @@ def main():
             print(json.dumps(st.stable_add(args.text, tags(args.tags)), ensure_ascii=False))
         else:
             print(json.dumps(st.stable_list(), ensure_ascii=False, indent=2))
+    elif args.cmd == "persona":
+        if args.action == "set":
+            text = args.text or ""
+            if args.file:
+                from pathlib import Path as _P
+                text = _P(args.file).read_text(encoding="utf-8")
+            print(json.dumps(st.set_persona(text), ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps(st.persona(), ensure_ascii=False, indent=2))
     elif args.cmd == "todo":
         if args.action == "add":
             print(json.dumps(st.todo_add(args.text, args.due), ensure_ascii=False))
