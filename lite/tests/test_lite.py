@@ -88,6 +88,29 @@ class TestBlock(Base):
         self.assertIn("【稳定记忆】", out)
 
 
+class TestRobust(Base):
+    def test_corrupt_json_raises_and_backs_up(self):
+        self.st.stable.write_text("{broken", encoding="utf-8")
+        with self.assertRaises(RuntimeError):
+            self.st.stable_list()
+        self.assertEqual(len(list(self.st.root.glob("stable.json.bad-*"))), 1)
+
+    def test_block_split_before_check(self):
+        self.st.block_add("字" * 1700)
+        self.assertEqual(len(self.st.block_list()), 3)
+
+    def test_snapshot_names_unique(self):
+        a = self.st.snapshot()
+        b = self.st.snapshot()
+        self.assertNotEqual(a, b)
+        self.assertTrue(a.exists() and b.exists())
+
+    def test_snapshot_contains_archive(self):
+        snap = self.st.snapshot()
+        self.assertTrue((snap / "stable.json").exists())
+        self.assertTrue((snap / "archive.jsonl").exists())
+
+
 class TestTime(unittest.TestCase):
     def test_cases(self):
         r = date(2026, 10, 31)
@@ -97,6 +120,8 @@ class TestTime(unittest.TestCase):
         self.assertEqual(normalize("三个月前", r), "2026-07-31")
         self.assertEqual(normalize("一个月后", r), "2026-11-30")
         self.assertEqual(normalize("乱写", r), "")
+        self.assertEqual(normalize("十二月二十八号", r), "2026-12-28")
+        self.assertEqual(normalize("十月二十日", r), "2026-10-20")
 
 
 if __name__ == "__main__":
