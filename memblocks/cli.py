@@ -54,6 +54,18 @@ def main():
     f.add_argument("--tags", default="")
     f.add_argument("--id", default="")
 
+    ev = sub.add_parser("event")
+    ev.add_argument("action", choices=["add", "list"])
+    ev.add_argument("--when", default="")
+    ev.add_argument("--actor", default="主人")
+    ev.add_argument("--do", dest="action_text", default="")
+    ev.add_argument("--object", default="")
+
+    tl = sub.add_parser("timeline")
+    tl.add_argument("--from", dest="start", default="")
+    tl.add_argument("--to", dest="end", default="")
+    tl.add_argument("--entity", default="")
+
     e = sub.add_parser("extract")
     e.add_argument("--file", default="")
     e.add_argument("--text", default="")
@@ -129,6 +141,14 @@ def main():
             print(st.pending_reject(args.id))
         else:
             print(json.dumps(st.fact_list(), ensure_ascii=False, indent=2))
+    elif args.cmd == "event":
+        if args.action == "add":
+            print(json.dumps(st.event_add(args.when, args.actor, args.action_text, args.object),
+                             ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps(st.timeline(limit=50), ensure_ascii=False, indent=2))
+    elif args.cmd == "timeline":
+        print(json.dumps(st.timeline(args.start, args.end, args.entity), ensure_ascii=False, indent=2))
     elif args.cmd == "extract":
         from .extract import extract
         from pathlib import Path as _P
