@@ -51,8 +51,12 @@ class Store:
                 try:
                     import msvcrt
                     msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
-                except Exception:
-                    pass
+                except ImportError:
+                    try:
+                        import fcntl
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+                    except Exception:
+                        pass
             yield
         finally:
             _TL.depth = depth
@@ -60,8 +64,12 @@ class Store:
                 try:
                     import msvcrt
                     msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-                except Exception:
-                    pass
+                except ImportError:
+                    try:
+                        import fcntl
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                    except Exception:
+                        pass
                 fh.close()
 
     # ---------- 初始化 ----------
@@ -184,6 +192,15 @@ class Store:
             "at": time.strftime("%Y-%m-%d %H:%M"),
             "last_hit": time.strftime("%Y-%m-%d %H:%M"),
         }
+        # 完全重复：直接加权返回，不再追加
+        for old in data:
+            if (old.get("entity") == entity and old.get("text") == text and not old.get("superseded")):
+                old["score"] = round(float(old.get("score", 1.0)) + 0.1, 3)
+                old["hits"] = old.get("hits", 1) + 1
+                old["last_hit"] = time.strftime("%Y-%m-%d %H:%M")
+                _save(self.facts, data)
+                return old
+
         # 冲突检测：同一人物 + 同一类别，新的覆盖旧的
         kind = (tags or [""])[0]
         if entity and kind and kind not in ("", "other"):
@@ -222,9 +239,15 @@ class Store:
             if x.get("protected"):
                 keep.append(x)
                 continue
-            try:
-                last = datetime.strptime(x.get("last_hit", x.get("at", "")), "%Y-%m-%d %H:%M")
-            except Exception:
+            last = None
+            for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d", "%Y/%m/%d"):
+                try:
+                    last = datetime.strptime(x.get("last_hit", x.get("at", "")), fmt)
+                    break
+                except Exception:
+                    continue
+            if last is None:
+                self.log(f"warn: bad time for {x.get('id')}, treated as today")
                 last = now
             days = (now - last).days
             emo = x.get("emotion") or {}
@@ -245,6 +268,8 @@ class Store:
 
     # ---------- 待确认队列 ----------
     def pending_add_raw(self, items):
+        if isinstance(items, dict):
+            items = [items]
         data = _load(self.pending, [])
         added = 0
         for it in items:
@@ -351,7 +376,13 @@ class Store:
         blocks = self.block_list()
         if not blocks or not query:
             return []
-        docs = [(b.get("id", ""), (b.get("summary", "") + " " + str(b.get("tags", {})))) for b in blocks]
+        def doc_of(b):
+            t = b.get("tags") or {}
+            objs = " ".join(t.get("objects") or [])
+            syn = " ".join(t.get("synonyms") or [])
+            return (b.get("summary", "") + " " + t.get("topic", "") + " " + objs + " " +
+                    " ".join([syn] * 2))
+        docs = [(b.get("id", ""), doc_of(b)) for b in blocks]
         idx = TfIdf(docs)
         ids = idx.search(query, limit)
         by_id = {b.get("id", ""): b for b in blocks}
@@ -365,52 +396,67 @@ class Store:
         return any(g in blob for g in grams)
 
     def inject(self, query: str = "", max_tokens: int = 800):
-        """只读：拼装注入文本，不修改任何权重。复习请用 review()。"""
+        """只读：按优先级拼装，受 max_tokens 约束。保护性内容优先。"""
+        budget = max(120, int(max_tokens)) * 2  # 粗略：2 字符 ≈ 1 token
+        used = 0
         parts = []
+
+        def add(title, lines):
+            nonlocal used
+            lines = [ln for ln in lines if ln]
+            if not lines:
+                return
+            block = title + "\n" + "\n".join(lines)
+            if parts and used + len(block) > budget:
+                return
+            parts.append(block)
+            used += len(block)
+
         per = self.persona()
         if per:
-            parts.append("【人设】\n" + per["text"])
+            add("【人设】", [per["text"]])
+
+        facts = self.fact_list()
+        protected = [f for f in facts if f.get("protected")]
+        if protected:
+            add("【重要】", [f"- {(f.get('entity') or '主人')}：{f['text']}" for f in protected])
+
         stable = [x for x in self.stable_list() if x.get("kind") != "persona"]
         if stable:
-            parts.append("【稳定记忆】\n" + "\n".join(f"- {x['text']}" for x in stable[-30:]))
-
-        # 事件：有查询就按相关过滤，否则只给最近 3 条
-        events = self.timeline(limit=30)
-        if query:
-            events = [e for e in events if self._match(query, e.get("actor", "") + e.get("object", "") + e.get("action", ""))]
-        events = events[-3:]
-        if events:
-            parts.append("【最近事件】\n" + "\n".join(
-                f"- {e['when']} {e['actor']}{e['action']}{e.get('object','')}" for e in events))
-
-        # 人物事实：有查询按相关过滤，否则只给权重前 3
-        facts = self.fact_top(30)
-        if query:
-            facts = [x for x in facts if self._match(query, x.get("entity", "") + x.get("text", ""))]
-            facts = facts[:8]
-        else:
-            facts = facts[:3]
-        if facts:
-            parts.append("【关于人物】\n" + "\n".join(
-                f"- {(x.get('entity') or '某人')}：{x['text']}" for x in facts))
+            add("【稳定记忆】", [f"- {x['text']}" for x in stable])
 
         todos = self.todo_list()
         if todos:
-            parts.append("【待办】\n" + "\n".join(
-                f"- {x['text']}" + (f"（截止 {x['due']}）" if x.get("due") else "") for x in todos[:15]))
+            add("【待办】", [f"- {x['text']}" + (f"（截止 {x['due']}）" if x.get("due") else "")
+                            for x in todos])
+
+        events = self.timeline(limit=10)
+        if query:
+            events = [e for e in events
+                      if self._match(query, e.get("actor", "") + e.get("object", "") + e.get("action", ""))]
+        events = events[-3:]
+        if events:
+            add("【最近事件】", [f"- {e['when']} {e['actor']}{e['action']}{e.get('object','')}" for e in events])
+
+        others = [f for f in self.fact_top(20) if not f.get("protected")]
+        if query:
+            others = [f for f in others if self._match(query, f.get("entity", "") + f.get("text", ""))]
+        else:
+            others = others[:3]
+        if others:
+            add("【关于人物】", [f"- {(f.get('entity') or '某人')}：{f['text']}" for f in others])
 
         recent = self.recent_list()
         if recent:
-            parts.append("【最近】\n" + "\n".join(f"- {x['text']}" for x in recent[-15:]))
+            add("【最近】", [f"- {x['text']}" for x in recent[-8:]])
 
-        hits = self.block_search(query) if query else []
+        hits = self.block_search(query, 3) if query else []
         if hits:
-            parts.append("【相关归档】\n" + "\n".join(f"- {b.get('summary','')}" for b in hits[:3]))
+            add("【相关归档】", [f"- {b.get('summary','')}" for b in hits])
 
-        if query and not parts:
-            parts.append("【元记忆】\n（关于这个问题没有可靠记忆，不要编造）")
-        text = "\n\n".join(parts)
-        return text[:max_tokens * 4]
+        if not parts:
+            return "【元记忆】\n（关于这个问题没有可靠记忆，不要编造）"
+        return "\n\n".join(parts)[:budget]
 
     def review(self, query: str = "", limit: int = 8):
         """复习：把被检索到的事实权重 +0.2（显式调用，不在 inject 里偷偷做）。"""
@@ -478,6 +524,21 @@ class Store:
     def log(self, msg: str):
         with open(self.audit, "a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+
+    def restore(self, snapshot_dir):
+        """从快照恢复（覆盖当前记忆文件）。"""
+        import shutil
+        src = Path(snapshot_dir)
+        if not src.exists():
+            raise FileNotFoundError(snapshot_dir)
+        for name in ("stable.json", "todo.json", "facts.json", "events.jsonl", "recent.jsonl"):
+            p = src / name
+            if p.exists():
+                shutil.copy2(p, self.root / name)
+        blocks = src / "blocks"
+        if blocks.exists():
+            shutil.copytree(blocks, self.blocks, dirs_exist_ok=True)
+        return {"ok": True, "restored_from": str(src)}
 
     def snapshot(self):
         import shutil
