@@ -251,6 +251,9 @@ class Store:
             key = (it.get("entity", ""), it.get("text", ""))
             if any((x.get("entity", ""), x.get("text", "")) == key for x in data):
                 continue
+            # 跨轮去重：已入库的事实不再重复入候选
+            if any((x.get("entity", ""), x.get("text", "")) == key for x in _load(self.facts, [])):
+                continue
             it = dict(it)
             it["id"] = "pfact-" + time.strftime("%Y%m%d-%H%M%S") + "-" + __import__("uuid").uuid4().hex[:4]
             data.append(it)
@@ -344,17 +347,16 @@ class Store:
         return [b for b in out if b]
 
     def block_search(self, query: str, limit: int = 3):
-        q = (query or "").lower()
-        scored = []
-        for b in self.block_list():
-            blob = json.dumps(b, ensure_ascii=False).lower()
-            score = sum(1 for ch in set(q) if ch.strip() and ch in blob)
-            if score:
-                scored.append((score, b))
-        scored.sort(key=lambda x: -x[0])
-        return [b for _, b in scored[:limit]]
+        from .retrieval import TfIdf
+        blocks = self.block_list()
+        if not blocks or not query:
+            return []
+        docs = [(b.get("id", ""), (b.get("summary", "") + " " + str(b.get("tags", {})))) for b in blocks]
+        idx = TfIdf(docs)
+        ids = idx.search(query, limit)
+        by_id = {b.get("id", ""): b for b in blocks}
+        return [by_id[i] for i in ids if i in by_id]
 
-    # ---------- 注入 ----------
     def _match(self, query: str, blob: str) -> bool:
         q = "".join(ch for ch in (query or "") if ch.strip())
         if not q:
