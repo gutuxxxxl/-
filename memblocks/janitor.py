@@ -99,6 +99,15 @@ class Janitor:
         if len(stable) > 50:
             self.report["warnings"].append(f"稳定事实 {len(stable)} 条，超过建议上限 50，建议合并")
 
+        # 6. 人物事实衰减（非保护）
+        if not self.dry_run:
+            left, dropped = self.s.fact_decay()
+            self.report["facts_left"] = left
+            self.report["facts_decayed"] = dropped
+        else:
+            self.report["facts_left"] = len(self.s.fact_list())
+            self.report["facts_decayed"] = 0
+
         if not self.dry_run and self.changes:
             self.report["changes"] = self.changes
         return self.report
