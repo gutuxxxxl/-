@@ -26,6 +26,8 @@ class Store:
         self.blocks = self.root / "blocks"
         self.snapshots = self.root / "snapshots"
         self.audit = self.root / "audit.log"
+        self.facts = self.root / "facts.json"
+        self.config = self.root / "config.json"
 
     # ---------- 初始化 ----------
     def init(self):
@@ -36,6 +38,10 @@ class Store:
             _save(self.stable, [])
         if not self.todo.exists():
             _save(self.todo, [])
+        if not self.facts.exists():
+            _save(self.facts, [])
+        if not self.config.exists():
+            _save(self.config, {"owner_names": ["主人", "我", "管理员"]})
         if not self.recent.exists():
             self.recent.write_text("", encoding="utf-8")
         per = self.persona()
@@ -116,6 +122,62 @@ class Store:
                 pass
         return out
 
+    # ---------- 人物事实（带权重，可淡忘） ----------
+    def owner_names(self):
+        return _load(self.config, {}).get("owner_names", ["主人", "我"])
+
+    def fact_add(self, text: str, entity: str = "", tags=None, protected=None):
+        if protected is None:
+            protected = entity.strip() in self.owner_names()
+        data = _load(self.facts, [])
+        item = {
+            "id": "fact-" + time.strftime("%Y%m%d-%H%M%S") + "-" + __import__("uuid").uuid4().hex[:4],
+            "text": text,
+            "entity": entity,
+            "tags": tags or [],
+            "protected": bool(protected),
+            "score": 1.0,
+            "hits": 1,
+            "at": time.strftime("%Y-%m-%d %H:%M"),
+            "last_hit": time.strftime("%Y-%m-%d %H:%M"),
+        }
+        data.append(item)
+        _save(self.facts, data)
+        return item
+
+    def fact_list(self):
+        return _load(self.facts, [])
+
+    def fact_hit(self, fid: str):
+        data = _load(self.facts, [])
+        for x in data:
+            if x.get("id") == fid:
+                x["score"] = min(5.0, x.get("score", 1.0) + 0.5)
+                x["hits"] = x.get("hits", 1) + 1
+                x["last_hit"] = time.strftime("%Y-%m-%d %H:%M")
+                _save(self.facts, data)
+                return x
+        return None
+
+    def fact_decay(self, rate: float = 0.85, floor: float = 0.15):
+        """非保护事实按次衰减，低于阈值删除。返回 (剩余, 删除数)。"""
+        data = _load(self.facts, [])
+        keep, dropped = [], 0
+        for x in data:
+            if x.get("protected"):
+                keep.append(x)
+                continue
+            x["score"] = round(float(x.get("score", 1.0)) * rate, 3)
+            if x["score"] < floor:
+                dropped += 1
+            else:
+                keep.append(x)
+        _save(self.facts, keep)
+        return len(keep), dropped
+
+    def fact_top(self, limit: int = 10):
+        return sorted(self.fact_list(), key=lambda x: -float(x.get("score", 0)))[:limit]
+
     # ---------- 归档块 ----------
     def block_add(self, summary: str, topic: str = "", type_: str = "note",
                   objects=None, conclusion: str = "", synonyms=None, source: str = ""):
@@ -169,6 +231,13 @@ class Store:
         recent = self.recent_list()
         if recent:
             parts.append("【最近】\n" + "\n".join(f"- {x['text']}" for x in recent[-15:]))
+        facts = self.fact_top(12)
+        if facts:
+            lines = []
+            for x in facts:
+                who = x.get("entity") or "某人"
+                lines.append(f"- {who}：{x['text']}")
+            parts.append("【关于人物】\n" + "\n".join(lines))
         hits = self.block_search(query) if query else []
         if hits:
             parts.append("【相关归档】\n" + "\n".join(f"- {b.get('summary','')}" for b in hits))
