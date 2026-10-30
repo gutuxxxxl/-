@@ -77,6 +77,9 @@ def main():
     e.add_argument("--file", default="")
     e.add_argument("--text", default="")
 
+    ex = sub.add_parser("export")
+    ex.add_argument("--out", default="memblocks-backup.zip")
+
     d = sub.add_parser("doctor")
     d.add_argument("--purge-days", type=int, default=3)
 
@@ -172,6 +175,8 @@ def main():
         items = extract(text or "")
         n = st.pending_add(items)
         print(json.dumps({"extracted": len(items), "added": n, "items": items}, ensure_ascii=False, indent=2))
+    elif args.cmd == "export":
+        print(st.export_zip(args.out))
     elif args.cmd == "doctor":
         from .janitor import Janitor as _J
         print(json.dumps(_J(st, True).run(), ensure_ascii=False, indent=2))
