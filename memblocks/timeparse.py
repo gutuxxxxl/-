@@ -67,6 +67,27 @@ def normalize(text: str, ref: date | None = None) -> str:
         if unit == "年":
             return _shift_years(ref, n).isoformat()
 
+    # X 天/周/个月/年 后（未来）
+    m = re.search(r"(\d+|[一二两三四五六七八九十]+)\s*(天|周|个?月|年)(?:后|以后|之后)", t)
+    if m:
+        n = _num(m.group(1))
+        unit = m.group(2)
+        if unit == "天":
+            return (ref + timedelta(days=n)).isoformat()
+        if unit == "周":
+            return (ref + timedelta(weeks=n)).isoformat()
+        if "月" in unit:
+            return _shift_months(ref, -n).isoformat()
+        if unit == "年":
+            return _shift_years(ref, -n).isoformat()
+
+    # 明年 X 月
+    m = re.search(r"明年\s*(\d{1,2}|[一二三四五六七八九十]+)\s*月", t)
+    if m:
+        mo = _num(m.group(1))
+        if 1 <= mo <= 12:
+            return date(ref.year + 1, mo, 1).isoformat()
+
     # 上周三 / 这周三 / 上上周三
     m = re.search(r"(上上周|上周|这周|本周|下周)([一二三四五六日天])", t)
     if m:
