@@ -414,3 +414,11 @@ python -m unittest tests.test_concurrency -v
 - Linux：`fcntl.flock` 回退
 
 本地 Windows 实测通过（3.9s / 240 条）。
+
+## 0.4：日志轮转、近似去重、适配层测试
+
+- `audit.log` / `recent.jsonl` 超过 1 MB 自动轮转（`.1` ~ `.5`）
+- `consolidate` 先归一化再比较：「生日是12月28号」与「生日 12 月 28 日」视为同一条
+- `tests/test_adapter.py`：用假的 astrbot 模块验证适配层能加载、装饰器能挂上
+
+测试总数：14
