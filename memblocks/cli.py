@@ -47,6 +47,13 @@ def main():
     i.add_argument("--query", default="")
     i.add_argument("--max-tokens", type=int, default=800)
 
+    f = sub.add_parser("fact")
+    f.add_argument("action", choices=["add", "list", "hit", "top"])
+    f.add_argument("--text", default="")
+    f.add_argument("--entity", default="")
+    f.add_argument("--tags", default="")
+    f.add_argument("--id", default="")
+
     d = sub.add_parser("doctor")
     d.add_argument("--purge-days", type=int, default=3)
 
@@ -103,6 +110,15 @@ def main():
             print(json.dumps(st.recent_list(), ensure_ascii=False, indent=2))
     elif args.cmd == "inject":
         print(st.inject(args.query, args.max_tokens))
+    elif args.cmd == "fact":
+        if args.action == "add":
+            print(json.dumps(st.fact_add(args.text, args.entity, tags(args.tags)), ensure_ascii=False, indent=2))
+        elif args.action == "hit":
+            print(json.dumps(st.fact_hit(args.id), ensure_ascii=False, indent=2))
+        elif args.action == "top":
+            print(json.dumps(st.fact_top(), ensure_ascii=False, indent=2))
+        else:
+            print(json.dumps(st.fact_list(), ensure_ascii=False, indent=2))
     elif args.cmd == "doctor":
         from .janitor import Janitor as _J
         print(json.dumps(_J(st, True).run(), ensure_ascii=False, indent=2))
