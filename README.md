@@ -213,3 +213,26 @@ python -m memblocks.cli fact add --text "生日是 3 月 3 日" --entity "张三
 主人名单在 `memories/config.json` 的 `owner_names` 里，可以自己改。
 
 注入时会在【关于人物】里列出当前权重最高的事实。
+
+## 自动提取（候选制）
+
+从聊天记录里抽人物事实，先入候选队列，你确认后入库：
+
+```bash
+python -m memblocks.cli extract --file chat.txt
+# 或
+python -m memblocks.cli extract --text "我的生日是5月20日。张三是我同事。"
+
+python -m memblocks.cli fact pending          # 看候选
+python -m memblocks.cli fact approve --id pfact-xxx
+python -m memblocks.cli fact reject --id pfact-xxx
+```
+
+规则：
+
+- 「我 / 主人 / 管理员」相关 → 自动 `protected`
+- 其他人 → 进候选，默认不保护，会随时间衰减
+- 同一事实去重
+
+内置规则抽取（生日、职业、位置、关系、偏好），不依赖模型；
+如需更准，`memblocks/extract.py` 里留了 `EXTRACT_PROMPT`，可接任意 OpenAI 兼容接口。
