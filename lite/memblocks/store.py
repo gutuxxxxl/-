@@ -87,8 +87,8 @@ class Store:
         if not t:
             raise ValueError(f"{kind} 不能为空")
         if len(t) > limit:
-            self.log(f"warn: {kind} 超长 {len(t)}>{limit}，已截断")
-            t = t[:limit]
+            # 不再静默截断：超长直接报错，调用方自己决定怎么处理
+            raise ValueError(f"{kind} 超长：{len(t)} > {limit} 字，请先拆分")
         return t
 
     # ---------- 稳定区 ----------
