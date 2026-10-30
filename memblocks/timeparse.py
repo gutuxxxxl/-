@@ -43,13 +43,17 @@ def normalize(text: str, ref: date | None = None) -> str:
     t = (text or "").strip()
     if not t:
         return ""
-    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", t):
-        return t
+    if re.fullmatch(r"\d{4}-\d{1,2}-\d{1,2}", t):
+        y, m, d = [int(x) for x in t.split("-")]
+        try:
+            return date(y, m, d).isoformat()
+        except ValueError:
+            return ""
 
     # 今天/昨天/前天/大前天/明天/后天
     simple = {"今天": 0, "今日": 0, "昨天": -1, "昨日": -1, "前天": -2, "大前天": -3,
               "明天": 1, "后天": 2, "大后天": 3}
-    for k, off in simple.items():
+    for k, off in sorted(simple.items(), key=lambda x: -len(x[0])):
         if k in t:
             return (ref + timedelta(days=off)).isoformat()
 
@@ -117,6 +121,14 @@ def normalize(text: str, ref: date | None = None) -> str:
                 return d.isoformat()
             except ValueError:
                 return ""
+
+    # 去年 X 月 / 前年 X 月
+    m = re.search(r"(去年|前年)\s*(\d{1,2}|[一二三四五六七八九十]+)\s*月", t)
+    if m:
+        back = 1 if m.group(1) == "去年" else 2
+        mo = _num(m.group(2))
+        if 1 <= mo <= 12:
+            return date(ref.year - back, mo, 1).isoformat()
 
     # 去年 / 前年
     if "去年" in t:
