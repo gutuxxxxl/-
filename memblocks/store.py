@@ -139,16 +139,26 @@ class Store:
             "entity": entity,
             "tags": tags or [],
             "protected": bool(protected),
-            "score": 1.0,
+            "score": 1.5 if (tags and tags[0] in ("生日", "职业", "关系")) else 1.0,
             "hits": 1,
             "at": time.strftime("%Y-%m-%d %H:%M"),
             "last_hit": time.strftime("%Y-%m-%d %H:%M"),
         }
+        # 冲突检测：同一人物 + 同一类别，新的覆盖旧的
+        kind = (tags or [""])[0]
+        if entity and kind and kind not in ("", "other"):
+            for old in data:
+                if (old.get("entity") == entity and (old.get("tags") or [""])[0] == kind
+                        and not old.get("superseded") and old.get("text") != text):
+                    old["superseded"] = True
+                    old["superseded_by"] = item["id"]
         data.append(item)
         _save(self.facts, data)
         return item
 
-    def fact_list(self):
+    def fact_list(self, include_superseded=False):
+        data = _load(self.facts, [])
+        return data if include_superseded else [x for x in data if not x.get("superseded")]
         return _load(self.facts, [])
 
     def fact_hit(self, fid: str):
@@ -162,15 +172,27 @@ class Store:
                 return x
         return None
 
-    def fact_decay(self, rate: float = 0.85, floor: float = 0.15):
-        """非保护事实按次衰减，低于阈值删除。返回 (剩余, 删除数)。"""
+    def fact_decay(self, floor: float = 0.15):
+        """间隔复习模型：7 天内不动，7~30 天轻降，30 天以上重降。"""
+        from datetime import datetime
         data = _load(self.facts, [])
+        now = datetime.now()
         keep, dropped = [], 0
         for x in data:
             if x.get("protected"):
                 keep.append(x)
                 continue
-            x["score"] = round(float(x.get("score", 1.0)) * rate, 3)
+            try:
+                last = datetime.strptime(x.get("last_hit", x.get("at", "")), "%Y-%m-%d %H:%M")
+            except Exception:
+                last = now
+            days = (now - last).days
+            if days <= 7:
+                pass
+            elif days <= 30:
+                x["score"] = round(float(x.get("score", 1.0)) * 0.95, 3)
+            else:
+                x["score"] = round(float(x.get("score", 1.0)) * 0.70, 3)
             if x["score"] < floor:
                 dropped += 1
             else:
@@ -274,10 +296,17 @@ class Store:
             for x in facts:
                 who = x.get("entity") or "某人"
                 lines.append(f"- {who}：{x['text']}")
+                # 间隔重复：被注入即视为复习
+                if not x.get("protected"):
+                    x["score"] = min(5.0, round(float(x.get("score", 1.0)) + 0.2, 3))
+                    x["last_hit"] = time.strftime("%Y-%m-%d %H:%M")
+            _save(self.facts, [x for x in self.fact_list(True)])
             parts.append("【关于人物】\n" + "\n".join(lines))
         hits = self.block_search(query) if query else []
         if hits:
             parts.append("【相关归档】\n" + "\n".join(f"- {b.get('summary','')}" for b in hits))
+        if query and not parts:
+            parts.append("【元记忆】\n（关于这个问题没有可靠记忆，不要编造）")
         text = "\n\n".join(parts)
         # 粗略按 4 字符 ≈ 1 token 截断
         limit = max_tokens * 4
