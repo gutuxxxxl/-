@@ -14,6 +14,25 @@ def _num(s: str) -> int:
     return CN_NUM.get(s, 0)
 
 
+def _shift_months(d: date, n: int) -> date:
+    y, m = d.year, d.month - n
+    while m <= 0:
+        y, m = y - 1, m + 12
+    while m > 12:
+        y, m = y + 1, m - 12
+    day = min(d.day, [31, 29 if (y % 4 == 0 and y % 100 != 0) or y % 400 == 0 else 28,
+                      31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1])
+    return date(y, m, day)
+
+
+def _shift_years(d: date, n: int) -> date:
+    y = d.year - n
+    try:
+        return d.replace(year=y)
+    except ValueError:
+        return d.replace(year=y, day=28)
+
+
 def _monday(d: date) -> date:
     return d - timedelta(days=d.weekday())
 
@@ -44,9 +63,9 @@ def normalize(text: str, ref: date | None = None) -> str:
         if unit == "周":
             return (ref - timedelta(weeks=n)).isoformat()
         if "月" in unit:
-            return (ref - timedelta(days=30 * n)).isoformat()
+            return _shift_months(ref, n).isoformat()
         if unit == "年":
-            return (ref - timedelta(days=365 * n)).isoformat()
+            return _shift_years(ref, n).isoformat()
 
     # 上周三 / 这周三 / 上上周三
     m = re.search(r"(上上周|上周|这周|本周|下周)([一二三四五六日天])", t)
