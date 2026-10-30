@@ -9,7 +9,17 @@ WD = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天
 
 def _n(s):
     s = s.strip()
-    return int(s) if s.isdigit() else CN.get(s, 0)
+    if s.isdigit():
+        return int(s)
+    if s in CN:
+        return CN[s]
+    # 中文数字：十 / 十二 / 二十 / 二十八 / 三十一
+    if "十" in s:
+        head, _, tail = s.partition("十")
+        tens = CN.get(head, 1) if head else 1
+        ones = CN.get(tail, 0) if tail else 0
+        return tens * 10 + ones
+    return 0
 
 
 def _shift_months(d, n):
@@ -68,8 +78,7 @@ def normalize(text, ref=None):
         mo, dd = _n(m.group(1)), _n(m.group(2))
         if 1 <= mo <= 12 and 1 <= dd <= 31:
             try:
-                d = date(ref.year, mo, dd)
-                return (d if d <= ref + timedelta(days=1) else date(ref.year - 1, mo, dd)).isoformat()
+                return date(ref.year, mo, dd).isoformat()
             except ValueError:
                 return ""
     return ""
