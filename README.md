@@ -135,3 +135,16 @@ memories/
 ## 许可证
 
 MIT
+
+## 仓库
+
+https://github.com/gutuxxxxl/-
+
+## 介绍视频
+
+https://www.bilibili.com/video/BV14rx66oEQv
+
+## 相关
+
+- 视频简介里提到的「分层记忆」演示
+- 欢迎 issue 提需求
