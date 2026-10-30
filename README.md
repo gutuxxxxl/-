@@ -278,3 +278,35 @@ python -m memblocks.cli fact reject --id pfact-xxx
 ### 5. 显著性
 
 生日、职业、关系这类重要类别，初始权重 1.5，普通偏好 1.0。
+
+## 情绪与时间线
+
+### 情绪权重
+
+每条事实/事件带 `emotion`：
+
+```json
+{"valence": -0.9, "arousal": 0.9, "label": "高唤醒-负"}
+```
+
+- 权重 = 基础值 × (1 + 0.6 × arousal)
+- **闪光灯记忆**：arousal > 0.7 的事件，30 天内不衰减
+- 关键词表在 `memblocks/emotions.py`，可替换成模型打分
+
+### 时间线
+
+事件单独存 `events.jsonl`：
+
+```bash
+python -m memblocks.cli event add --when 2026-10-30 --actor 主人 --do 决定 --object "做分层记忆插件"
+
+python -m memblocks.cli timeline --from 2026-10-01 --to 2026-10-31
+python -m memblocks.cli timeline --entity 张三
+```
+
+注入时会附上【最近事件】（最近 5 条），按时间正序。
+
+### 设计原则
+
+只记**有意义的节点**：决定、承诺、冲突、转折、情绪高峰。
+日常琐事不记，避免退化成聊天记录。
