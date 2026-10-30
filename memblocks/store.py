@@ -38,7 +38,13 @@ class Store:
             _save(self.todo, [])
         if not self.recent.exists():
             self.recent.write_text("", encoding="utf-8")
-        return {"ok": True, "root": str(self.root)}
+        per = self.persona()
+        return {
+            "ok": True,
+            "root": str(self.root),
+            "persona": bool(per),
+            "hint": "" if per else "未检测到人设。建议先导入：python -m memblocks.cli persona set --file persona.md",
+        }
 
     # ---------- 稳定事实 ----------
     def stable_add(self, text: str, tags=None, protected: bool = False):
