@@ -61,6 +61,10 @@ def main():
     ev.add_argument("--do", dest="action_text", default="")
     ev.add_argument("--object", default="")
 
+    tp = sub.add_parser("when")
+    tp.add_argument("text", nargs="+")
+    tp.add_argument("--ref", default="")
+
     tl = sub.add_parser("timeline")
     tl.add_argument("--from", dest="start", default="")
     tl.add_argument("--to", dest="end", default="")
@@ -147,6 +151,11 @@ def main():
                              ensure_ascii=False, indent=2))
         else:
             print(json.dumps(st.timeline(limit=50), ensure_ascii=False, indent=2))
+    elif args.cmd == "when":
+        from .timeparse import normalize
+        from datetime import date as _d
+        ref = _d.fromisoformat(args.ref) if args.ref else None
+        print(json.dumps({x: normalize(x, ref) for x in args.text}, ensure_ascii=False, indent=2))
     elif args.cmd == "timeline":
         print(json.dumps(st.timeline(args.start, args.end, args.entity), ensure_ascii=False, indent=2))
     elif args.cmd == "extract":
