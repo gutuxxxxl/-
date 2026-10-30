@@ -1,44 +1,39 @@
-"""相对时间归一化：把「上周三」「三个月前」在写入时就换算成绝对日期。"""
+"""相对时间归一化：写入时把「下周三」「三个月前」换成绝对日期。"""
 import re
 from datetime import date, timedelta
 
-CN_NUM = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7,
-          "八": 8, "九": 9, "十": 10, "十一": 11, "十二": 12}
-WEEKDAY = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
+CN = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7,
+      "八": 8, "九": 9, "十": 10, "十一": 11, "十二": 12}
+WD = {"一": 0, "二": 1, "三": 2, "四": 3, "五": 4, "六": 5, "日": 6, "天": 6}
 
 
-def _num(s: str) -> int:
+def _n(s):
     s = s.strip()
     if s.isdigit():
         return int(s)
-    return CN_NUM.get(s, 0)
+    if s in CN:
+        return CN[s]
+    # 中文数字：十 / 十二 / 二十 / 二十八 / 三十一
+    if "十" in s:
+        head, _, tail = s.partition("十")
+        tens = CN.get(head, 1) if head else 1
+        ones = CN.get(tail, 0) if tail else 0
+        return tens * 10 + ones
+    return 0
 
 
-def _shift_months(d: date, n: int) -> date:
+def _shift_months(d, n):
     y, m = d.year, d.month - n
     while m <= 0:
         y, m = y - 1, m + 12
     while m > 12:
         y, m = y + 1, m - 12
-    day = min(d.day, [31, 29 if (y % 4 == 0 and y % 100 != 0) or y % 400 == 0 else 28,
-                      31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1])
-    return date(y, m, day)
+    days = [31, 29 if (y % 4 == 0 and y % 100 != 0) or y % 400 == 0 else 28,
+            31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1]
+    return date(y, m, min(d.day, days))
 
 
-def _shift_years(d: date, n: int) -> date:
-    y = d.year - n
-    try:
-        return d.replace(year=y)
-    except ValueError:
-        return d.replace(year=y, day=28)
-
-
-def _monday(d: date) -> date:
-    return d - timedelta(days=d.weekday())
-
-
-def normalize(text: str, ref: date | None = None) -> str:
-    """返回归一化后的日期 YYYY-MM-DD；解析失败返回空串。"""
+def normalize(text, ref=None):
     ref = ref or date.today()
     t = (text or "").strip()
     if not t:
@@ -50,90 +45,40 @@ def normalize(text: str, ref: date | None = None) -> str:
         except ValueError:
             return ""
 
-    # 今天/昨天/前天/大前天/明天/后天
     simple = {"今天": 0, "今日": 0, "昨天": -1, "昨日": -1, "前天": -2, "大前天": -3,
               "明天": 1, "后天": 2, "大后天": 3}
     for k, off in sorted(simple.items(), key=lambda x: -len(x[0])):
         if k in t:
             return (ref + timedelta(days=off)).isoformat()
 
-    # X 天/周/个月/年 前
-    m = re.search(r"(\d+|[一二两三四五六七八九十]+)\s*(天|周|个?月|年)前", t)
+    m = re.search(r"(\d+|[一二两三四五六七八九十]+)\s*(天|周|个?月|年)(前|后|以后|之后)", t)
     if m:
-        n = _num(m.group(1))
-        unit = m.group(2)
+        n, unit, direction = _n(m.group(1)), m.group(2), m.group(3)
+        back = direction == "前"
         if unit == "天":
-            return (ref - timedelta(days=n)).isoformat()
+            return (ref - timedelta(days=n) if back else ref + timedelta(days=n)).isoformat()
         if unit == "周":
-            return (ref - timedelta(weeks=n)).isoformat()
+            return (ref - timedelta(weeks=n) if back else ref + timedelta(weeks=n)).isoformat()
         if "月" in unit:
-            return _shift_months(ref, n).isoformat()
+            return _shift_months(ref, n if back else -n).isoformat()
         if unit == "年":
-            return _shift_years(ref, n).isoformat()
+            try:
+                return ref.replace(year=ref.year - n if back else ref.year + n).isoformat()
+            except ValueError:
+                return ref.replace(year=ref.year - n if back else ref.year + n, day=28).isoformat()
 
-    # X 天/周/个月/年 后（未来）
-    m = re.search(r"(\d+|[一二两三四五六七八九十]+)\s*(天|周|个?月|年)(?:后|以后|之后)", t)
-    if m:
-        n = _num(m.group(1))
-        unit = m.group(2)
-        if unit == "天":
-            return (ref + timedelta(days=n)).isoformat()
-        if unit == "周":
-            return (ref + timedelta(weeks=n)).isoformat()
-        if "月" in unit:
-            return _shift_months(ref, -n).isoformat()
-        if unit == "年":
-            return _shift_years(ref, -n).isoformat()
-
-    # 明年 X 月
-    m = re.search(r"明年\s*(\d{1,2}|[一二三四五六七八九十]+)\s*月", t)
-    if m:
-        mo = _num(m.group(1))
-        if 1 <= mo <= 12:
-            return date(ref.year + 1, mo, 1).isoformat()
-
-    # 上周三 / 这周三 / 上上周三
     m = re.search(r"(上上周|上周|这周|本周|下周)([一二三四五六日天])", t)
     if m:
-        which, wd = m.group(1), m.group(2)
-        base = _monday(ref)
-        offset_week = {"上上周": -2, "上周": -1, "这周": 0, "本周": 0, "下周": 1}[which]
-        return (base + timedelta(weeks=offset_week, days=WEEKDAY[wd])).isoformat()
+        base = ref - timedelta(days=ref.weekday())
+        off = {"上上周": -2, "上周": -1, "这周": 0, "本周": 0, "下周": 1}[m.group(1)]
+        return (base + timedelta(weeks=off, days=WD[m.group(2)])).isoformat()
 
-    # 上个月 X 号
-    m = re.search(r"上个?月\s*(\d+|[一二三四五六七八九十]+)\s*[日号]", t)
-    if m:
-        n = _num(m.group(1))
-        y, mo = ref.year, ref.month - 1
-        if mo == 0:
-            y, mo = y - 1, 12
-        return date(y, mo, min(n, 28)).isoformat()
-
-    # X 月 X 日/号
     m = re.search(r"(\d{1,2}|[一二三四五六七八九十]+)\s*月\s*(\d{1,2}|[一二三四五六七八九十]+)\s*[日号]", t)
     if m:
-        mo, dd = _num(m.group(1)), _num(m.group(2))
+        mo, dd = _n(m.group(1)), _n(m.group(2))
         if 1 <= mo <= 12 and 1 <= dd <= 31:
             try:
-                d = date(ref.year, mo, dd)
-                if d > ref + timedelta(days=1):
-                    d = date(ref.year - 1, mo, dd)
-                return d.isoformat()
+                return date(ref.year, mo, dd).isoformat()
             except ValueError:
                 return ""
-
-    # 去年 X 月 / 前年 X 月
-    m = re.search(r"(去年|前年)\s*(\d{1,2}|[一二三四五六七八九十]+)\s*月", t)
-    if m:
-        back = 1 if m.group(1) == "去年" else 2
-        mo = _num(m.group(2))
-        if 1 <= mo <= 12:
-            return date(ref.year - back, mo, 1).isoformat()
-
-    # 去年 / 前年
-    if "去年" in t:
-        return date(ref.year - 1, ref.month, ref.day).isoformat()
-    if "前年" in t:
-        return date(ref.year - 2, ref.month, ref.day).isoformat()
-
     return ""
