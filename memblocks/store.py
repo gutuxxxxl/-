@@ -28,6 +28,7 @@ class Store:
         self.audit = self.root / "audit.log"
         self.facts = self.root / "facts.json"
         self.config = self.root / "config.json"
+        self.pending = self.root / "facts_pending.json"
 
     # ---------- 初始化 ----------
     def init(self):
@@ -40,6 +41,8 @@ class Store:
             _save(self.todo, [])
         if not self.facts.exists():
             _save(self.facts, [])
+        if not self.pending.exists():
+            _save(self.pending, [])
         if not self.config.exists():
             _save(self.config, {"owner_names": ["主人", "我", "管理员"]})
         if not self.recent.exists():
@@ -174,6 +177,40 @@ class Store:
                 keep.append(x)
         _save(self.facts, keep)
         return len(keep), dropped
+
+    # ---------- 待确认队列 ----------
+    def pending_add(self, items):
+        data = _load(self.pending, [])
+        added = 0
+        for it in items:
+            key = (it.get("entity", ""), it.get("text", ""))
+            if any((x.get("entity", ""), x.get("text", "")) == key for x in data):
+                continue
+            it = dict(it)
+            it["id"] = "pfact-" + time.strftime("%Y%m%d-%H%M%S") + "-" + __import__("uuid").uuid4().hex[:4]
+            data.append(it)
+            added += 1
+        _save(self.pending, data)
+        return added
+
+    def pending_list(self):
+        return _load(self.pending, [])
+
+    def pending_approve(self, pid: str):
+        data = _load(self.pending, [])
+        for x in data:
+            if x.get("id") == pid:
+                data.remove(x)
+                _save(self.pending, data)
+                return self.fact_add(x.get("text", ""), x.get("entity", ""), [x.get("kind", "")],
+                                     protected=x.get("protected"))
+        return None
+
+    def pending_reject(self, pid: str):
+        data = _load(self.pending, [])
+        keep = [x for x in data if x.get("id") != pid]
+        _save(self.pending, keep)
+        return len(data) - len(keep)
 
     def fact_top(self, limit: int = 10):
         return sorted(self.fact_list(), key=lambda x: -float(x.get("score", 0)))[:limit]
