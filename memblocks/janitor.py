@@ -34,6 +34,24 @@ class Janitor:
         except Exception:
             return None
 
+    def consolidate(self):
+        """巩固：合并重复事实，保留权重最高的那条。"""
+        from .store import _load, _save
+        data = _load(self.s.facts, [])
+        best = {}
+        merged = 0
+        for x in data:
+            key = (x.get("entity", ""), x.get("text", ""))
+            if key not in best or float(x.get("score", 0)) > float(best[key].get("score", 0)):
+                if key in best:
+                    merged += 1
+                best[key] = x
+            else:
+                merged += 1
+        if merged and not self.dry_run:
+            _save(self.s.facts, list(best.values()))
+        return merged
+
     def run(self):
         blocks = self.s.block_list()
         stable = self.s.stable_list()
@@ -107,6 +125,12 @@ class Janitor:
         else:
             self.report["facts_left"] = len(self.s.fact_list())
             self.report["facts_decayed"] = 0
+
+        # 7. 巩固：合并重复事实
+        consolidated = self.consolidate()
+        self.report["consolidated"] = consolidated
+        if consolidated and not self.dry_run:
+            self._change(f"巩固合并重复事实 {consolidated} 条")
 
         if not self.dry_run and self.changes:
             self.report["changes"] = self.changes
