@@ -7,7 +7,7 @@ from .janitor import Janitor
 
 def main():
     ap = argparse.ArgumentParser(prog="memblocks", description="分层记忆工具")
-    ap.add_argument("--root", default="memories")
+    ap.add_argument("--root", default=str(__import__("pathlib").Path.home() / ".memblocks"))
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("init")
