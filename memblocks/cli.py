@@ -43,6 +43,9 @@ def main():
     r.add_argument("action", choices=["add", "list"])
     r.add_argument("text", nargs="?")
 
+    rv = sub.add_parser("review")
+    rv.add_argument("--query", default="")
+
     i = sub.add_parser("inject")
     i.add_argument("--query", default="")
     i.add_argument("--max-tokens", type=int, default=800)
@@ -128,6 +131,8 @@ def main():
             print("ok")
         else:
             print(json.dumps(st.recent_list(), ensure_ascii=False, indent=2))
+    elif args.cmd == "review":
+        print(st.review(args.query))
     elif args.cmd == "inject":
         print(st.inject(args.query, args.max_tokens))
     elif args.cmd == "fact":
