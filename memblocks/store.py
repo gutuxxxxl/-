@@ -29,6 +29,7 @@ class Store:
         self.facts = self.root / "facts.json"
         self.config = self.root / "config.json"
         self.pending = self.root / "facts_pending.json"
+        self.events = self.root / "events.jsonl"
 
     # ---------- 初始化 ----------
     def init(self):
@@ -45,6 +46,8 @@ class Store:
             _save(self.pending, [])
         if not self.config.exists():
             _save(self.config, {"owner_names": ["主人", "我", "管理员"]})
+        if not self.events.exists():
+            self.events.write_text("", encoding="utf-8")
         if not self.recent.exists():
             self.recent.write_text("", encoding="utf-8")
         per = self.persona()
@@ -129,7 +132,9 @@ class Store:
     def owner_names(self):
         return _load(self.config, {}).get("owner_names", ["主人", "我"])
 
-    def fact_add(self, text: str, entity: str = "", tags=None, protected=None):
+    def fact_add(self, text: str, entity: str = "", tags=None, protected=None, emotion=None):
+        from .emotions import score as _emo
+        emotion = emotion or _emo(text)
         if protected is None:
             protected = entity.strip() in self.owner_names()
         data = _load(self.facts, [])
@@ -139,7 +144,9 @@ class Store:
             "entity": entity,
             "tags": tags or [],
             "protected": bool(protected),
-            "score": 1.5 if (tags and tags[0] in ("生日", "职业", "关系")) else 1.0,
+            "score": round((1.5 if (tags and tags[0] in ("生日", "职业", "关系")) else 1.0)
+                           * (1 + 0.6 * emotion.get("arousal", 0)), 3),
+            "emotion": emotion,
             "hits": 1,
             "at": time.strftime("%Y-%m-%d %H:%M"),
             "last_hit": time.strftime("%Y-%m-%d %H:%M"),
@@ -187,7 +194,10 @@ class Store:
             except Exception:
                 last = now
             days = (now - last).days
-            if days <= 7:
+            emo = x.get("emotion") or {}
+            if emo.get("arousal", 0) > 0.7 and days <= 30:
+                pass  # 闪光灯记忆：30 天内不衰减
+            elif days <= 7:
                 pass
             elif days <= 30:
                 x["score"] = round(float(x.get("score", 1.0)) * 0.95, 3)
@@ -236,6 +246,40 @@ class Store:
 
     def fact_top(self, limit: int = 10):
         return sorted(self.fact_list(), key=lambda x: -float(x.get("score", 0)))[:limit]
+
+    # ---------- 时间线事件 ----------
+    def event_add(self, when: str, actor: str, action: str, obj: str = "",
+                  block_id: str = "", emotion=None):
+        from .emotions import score as _emo
+        ev = {
+            "event_id": "evt-" + time.strftime("%Y%m%d-%H%M%S") + "-" + __import__("uuid").uuid4().hex[:4],
+            "when": when,
+            "actor": actor,
+            "action": action,
+            "object": obj,
+            "block_id": block_id,
+            "emotion": emotion or _emo(f"{action}{obj}"),
+        }
+        with open(self.events, "a", encoding="utf-8") as f:
+            f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+        return ev
+
+    def timeline(self, start: str = "", end: str = "", entity: str = "", limit: int = 100):
+        rows = []
+        for line in self.events.read_text(encoding="utf-8").splitlines():
+            try:
+                ev = json.loads(line)
+            except Exception:
+                continue
+            if start and ev.get("when", "") < start:
+                continue
+            if end and ev.get("when", "") > end:
+                continue
+            if entity and entity not in (ev.get("actor", "") + ev.get("object", "")):
+                continue
+            rows.append(ev)
+        rows.sort(key=lambda x: x.get("when", ""))
+        return rows[-limit:]
 
     # ---------- 归档块 ----------
     def block_add(self, summary: str, topic: str = "", type_: str = "note",
@@ -290,6 +334,10 @@ class Store:
         recent = self.recent_list()
         if recent:
             parts.append("【最近】\n" + "\n".join(f"- {x['text']}" for x in recent[-15:]))
+        events = self.timeline(limit=5)
+        if events:
+            lines = [f"- {e['when']} {e['actor']}{e['action']}{e.get('object','')}" for e in events]
+            parts.append("【最近事件】\n" + "\n".join(lines))
         facts = self.fact_top(12)
         if facts:
             lines = []
