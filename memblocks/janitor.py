@@ -30,6 +30,18 @@ class Janitor:
 
         today = date.today()
         todos = self.s.todo_list(True)
+
+        # 1) 过期未完成 → 标记 done（同一次运行内就能继续走清理）
+        changed = 0
+        for t in todos:
+            d = self._due(t.get("due", ""))
+            if d and d < today and not t.get("done"):
+                t["done"] = True
+                t["done_at"] = today.isoformat()
+                changed += 1
+        r["expired"] = changed
+
+        # 2) 已完成的、超过 purge_days 的 → 归档后删除
         keep, drop = [], []
         for t in todos:
             d = self._due(t.get("due", ""))
@@ -38,24 +50,13 @@ class Janitor:
             else:
                 keep.append(t)
         r["purged"] = len(drop)
-        if drop and not self.dry_run:
-            with open(self.s.archive, "a", encoding="utf-8") as f:
-                for t in drop:
-                    f.write(json.dumps(t, ensure_ascii=False) + "\n")
-            _save(self.s.todo, keep)
-            self.changes += 1
 
-        # 过期未完成的标 done
-        alive = self.s.todo_list(True)
-        changed = 0
-        for t in alive:
-            d = self._due(t.get("due", ""))
-            if d and d < today and not t.get("done"):
-                t["done"] = True
-                changed += 1
-        r["expired"] = changed
-        if changed and not self.dry_run:
-            _save(self.s.todo, alive)
+        if (changed or drop) and not self.dry_run:
+            if drop:
+                with open(self.s.archive, "a", encoding="utf-8") as f:
+                    for t in drop:
+                        f.write(json.dumps(t, ensure_ascii=False) + "\n")
+            _save(self.s.todo, keep)
             self.changes += 1
 
         # 稳定区：近重复合并
