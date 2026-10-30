@@ -108,3 +108,12 @@ class TestPending(Base):
 
 if __name__ == "__main__":
     unittest.main()
+
+class TestConsolidate(Base):
+    def test_near_duplicate_merge(self):
+        self.st.fact_add("生日是12月28号", "张三", ["生日"])
+        self.st.fact_add("生日 12 月 28 日", "张三", ["生日"])
+        self.assertEqual(len(self.st.fact_list(True)), 2)
+        n = Janitor(self.st, dry_run=False).consolidate()
+        self.assertEqual(n, 1)
+        self.assertEqual(len(self.st.fact_list(True)), 1)
