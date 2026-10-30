@@ -53,6 +53,8 @@ class Janitor:
         return merged
 
     def run(self):
+        if not self.dry_run:
+            self.report["snapshot"] = str(self.s.snapshot())
         blocks = self.s.block_list()
         stable = self.s.stable_list()
         todos = self.s.todo_list()
@@ -109,9 +111,22 @@ class Janitor:
                 self.report["duplicate_tags"].append({"topic": t, "count": n})
 
         # 4. 超大块
+        split = 0
         for b in blocks:
-            if len(b.get("summary", "")) > 800:
-                self.report["large_blocks"] += 1
+            if len(b.get("summary", "")) > 800 and not self.dry_run:
+                from .store import _save
+                head, tail = b["summary"][:600], b["summary"][600:]
+                b["summary"] = head + "…"
+                b["split"] = True
+                _save(self.s.blocks / f"{b['id']}.json", b)
+                new = dict(b)
+                new["id"] = b["id"] + "-b"
+                new["summary"] = "…" + tail
+                _save(self.s.blocks / f"{new['id']}.json", new)
+                split += 1
+            elif len(b.get("summary", "")) > 800:
+                split += 1
+        self.report["large_blocks"] = split
 
         # 5. 稳定事实膨胀
         if len(stable) > 50:
@@ -132,6 +147,8 @@ class Janitor:
         if consolidated and not self.dry_run:
             self._change(f"巩固合并重复事实 {consolidated} 条")
 
+        if self.changes >= self.MAX_CHANGES:
+            self.report["stopped_early"] = True
         if not self.dry_run and self.changes:
             self.report["changes"] = self.changes
         return self.report
