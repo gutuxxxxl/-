@@ -84,7 +84,7 @@ store.restore("memories/snapshots/snap-20261031-060000")
 
 ```bash
 python -m unittest discover -s tests -v
-# 11 tests OK
+# 16 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、
@@ -111,3 +111,11 @@ tests/
 ## 许可证
 
 MIT
+
+## 健壮性（第三轮 review）
+
+- JSON 损坏不再静默当空：文件改名为 `.bad-时间戳` 并抛错
+- 快照包含全部数据文件（stable / todo / archive）
+- 块先按 800 字切分，再逐块校验，不先截断
+- 支持中文数字日期：「十二月二十八号」→ 2026-12-28
+- 快照目录名带 uuid 后缀，同秒两次不会覆盖
