@@ -206,6 +206,25 @@ class Store:
         return [_load(p, {}) for p in sorted(self.blocks.glob("*.json"))]
 
     # ---------- 注入 ----------
+    @staticmethod
+    def _window(line, query, room):
+        """超预算时，围绕查询命中的位置取窗口，而不是从头截。"""
+        if room <= 1 or len(line) <= room:
+            return line
+        q = _norm(query or "")
+        grams = {q[i:i + 2] for i in range(len(q) - 1)} if len(q) > 1 else {q}
+        pos = -1
+        low = _norm(line)
+        for g in grams:
+            if g and g in low:
+                pos = low.find(g)
+                break
+        if pos < 0:
+            return line[:room - 1] + "…"
+        start = max(0, pos - room // 3)
+        end = min(len(line), start + room - 1)
+        return ("…" if start > 0 else "") + line[start:end] + ("…" if end < len(line) else "")
+
     def inject(self, query="", max_tokens=800):
         budget = max(120, int(max_tokens)) * 2
         stable = sorted(self.stable_list(), key=lambda x: -float(x.get("weight", 1.0)))
@@ -230,7 +249,7 @@ class Store:
                 room = min(cap - seg_len, budget - used - len(title) - 2)
                 if room <= 0:
                     break
-                seg.append(ln[:max(1, room - 1)] + ("…" if len(ln) > room else ""))
+                seg.append(self._window(ln, query, max(2, room)))
                 seg_len += len(ln) + 1
             if seg:
                 block = title + "\n" + "\n".join(seg)
