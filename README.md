@@ -136,15 +136,26 @@ memories/
 
 MIT
 
-## 仓库
+## 人设自动转重要（接入即生效）
 
-https://github.com/gutuxxxxl/-
+人格设定直接写进稳定区，**永久保护、不参与淘汰**，每轮 inject 排在最前面：
 
-## 介绍视频
+```bash
+# 从文件导入（推荐）
+python -m memblocks.cli persona set --file persona.md
 
-https://www.bilibili.com/video/BV14rx66oEQv
+# 或直接写
+python -m memblocks.cli persona set "你是小鲸，一只蓝发鲸鱼娘……"
+```
 
-## 相关
+输出顺序固定为：
 
-- 视频简介里提到的「分层记忆」演示
-- 欢迎 issue 提需求
+```
+【人设】
+【稳定记忆】
+【待办】
+【最近】
+【相关归档】
+```
+
+人设放在最前，保证缓存前缀稳定，不会每轮抖动。
