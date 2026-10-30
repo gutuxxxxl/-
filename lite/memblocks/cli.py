@@ -7,6 +7,14 @@ from .janitor import Janitor
 
 
 def main():
+    try:
+        return _main()
+    except ValueError as e:
+        print(json.dumps({"error": str(e)}, ensure_ascii=False))
+        raise SystemExit(2)
+
+
+def _main():
     ap = argparse.ArgumentParser(prog="memlite", description="三层记忆（稳定/待办/归档）")
     ap.add_argument("--root", default=str(Path.home() / ".memlite"))
     sub = ap.add_subparsers(dest="cmd", required=True)
