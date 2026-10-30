@@ -58,6 +58,9 @@ python -m memblocks.cli janitor
 
 不会直接拒绝写入——拒绝会让人当场卡住。
 
+> 注意：淘汰发生在 `stable_add` 写入时；`janitor` 只在异常情况下兜底，
+> 所以它的报告里 `stable_trimmed` 通常是 0，这不是 bug。
+
 ## 超长直接报错
 
 单条超过上限（稳定/待办 200 字、块 2000 字）不再静默截断，直接抛 `ValueError`。
