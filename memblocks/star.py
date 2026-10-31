@@ -133,6 +133,7 @@ TEMPLATE = r"""<!doctype html>
   <span id="spd">0.3 天/秒</span>
   <button id="review">复习全部</button>
   <button id="reset">重置视角</button>
+  <button id="orbits">轨道：开</button>
   <span id="day">已过 0.0 天</span>
 </div>
 
@@ -162,7 +163,11 @@ N.forEach((n,i)=>{
   const r0 = base + (t-.5)*34 + (Math.random()-.5)*14; // 层内窄幅铺开
   n.r0 = r0;
   n.theta = arm*(Math.PI*2/ARMS) + t*2.6 + (Math.random()-.5)*.25;
-  n.omega = .05 + .24/(1+r0/240);
+  n.ecc = .05 + Math.random()*.16;                 // 轨道离心率
+  n.incl = (k==='稳定'? -.22 : k==='待办'? .16 : .46); // 轨道倾角，制造 3D 层次
+  n.phase = Math.random()*6.283;
+  n.omega = .55/Math.pow(Math.max(60,r0), 1.15);   // 开普勒：内圈转得快
+  n.trail = [];
   n.zOff = (Math.random()-.5)*90;
   n.x = Math.cos(n.theta)*r0;
   n.y = Math.sin(n.theta)*r0*0.62;
@@ -182,7 +187,7 @@ const DUST = Array.from({length: DUST_COUNT}, () => ({
   s: Math.random() < .12 ? 1.8 : 1.1,
 }));
 let rot=0, zoom=1.62, simDays=0, playing=true, speed=0.3, drag=false, last={x:0,y:0};
-let hover=null, selected=null;
+let hover=null, selected=null, showOrbits=true;
 const show={稳定:true,待办:true,归档:true};
 
 function retention(n){
@@ -201,12 +206,15 @@ function step(dt){
   const now = performance.now()/1000;
   for(const n of N){
     const r = retention(n);
-    n.theta += n.omega * dt * (.55 + .9*r);      // 内圈快、外圈慢
-    const scale = 1 + .30*(1-r);                  // 快忘的往外飘
-    const rr = n.r0 * scale;
-    n.x = Math.cos(n.theta)*rr;
-    n.y = Math.sin(n.theta)*rr*0.62;
-    n.z = n.zOff + Math.sin(n.theta*1.6 + now*.25)*16;
+    n.theta += n.omega * dt * (.55 + .9*r) * 60;   // 开普勒角速度
+    const scale = 1 + .30*(1-r);                   // 快忘的往外飘
+    const a = n.r0 * scale, b = a * (1 - n.ecc);
+    const x = Math.cos(n.theta)*a;
+    const y = Math.sin(n.theta)*b*0.62;
+    const z = Math.sin(n.theta + n.phase)*a*n.incl*0.35;
+    n.x = x; n.y = y; n.z = z + n.zOff*.25;
+    n.trail.push([n.x, n.y, n.z]);
+    if(n.trail.length > 26) n.trail.shift();
     if(n.flash>0) n.flash*=.94;
   }
 }
@@ -270,6 +278,36 @@ function draw(){
     const pa=project(a),pb=project(b),rr=Math.min(retention(a),retention(b));
     ctx.strokeStyle='rgba(90,150,220,'+(0.05+0.30*rr*l.w).toFixed(3)+')';ctx.lineWidth=.55+1.1*l.w;
     ctx.beginPath();ctx.moveTo(pa.x,pa.y);ctx.lineTo(pb.x,pb.y);ctx.stroke();}
+
+  // 每条记忆自己的椭圆轨道
+  if(showOrbits){
+    ctx.save();
+    for(const n of vis){
+      const scale = 1 + .30*(1-retention(n));
+      const a = n.r0*scale, b = a*(1-n.ecc);
+      ctx.strokeStyle = n.permanent ? 'rgba(255,215,106,.14)' : hexA(n.color,.09);
+      ctx.lineWidth = .8;
+      ctx.beginPath();
+      for(let t=0;t<=Math.PI*2+.05;t+=.1){
+        const px = Math.cos(t)*a, py = Math.sin(t)*b*0.62;
+        const p = project({x:px, y:py, z:Math.sin(t+n.phase)*a*n.incl*0.35 + n.zOff*.25});
+        t===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // 拖尾
+  for(const n of vis){
+    if(n.trail.length < 2) continue;
+    ctx.beginPath();
+    n.trail.forEach((pt,i)=>{
+      const p = project({x:pt[0],y:pt[1],z:pt[2]});
+      i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y);
+    });
+    ctx.strokeStyle = n.permanent ? 'rgba(255,215,106,.22)' : hexA(n.color,.16);
+    ctx.lineWidth = 1.1; ctx.stroke();
+  }
 
   const pts=vis.map(n=>({n,...project(n)})).sort((a,b)=>a.z-b.z);
   for(const it of pts){
@@ -386,6 +424,9 @@ document.getElementById('speed').oninput=e=>{speed=parseFloat(e.target.value);
 document.getElementById('review').onclick=()=>{N.forEach(n=>{
   n.weight=Math.min(9,n.weight+.4);n.lastMs=now0;n.flash=1;});};
 document.getElementById('reset').onclick=()=>{rot=0;zoom=1.62;simDays=0;};
+document.getElementById('orbits').onclick=function(){
+  showOrbits=!showOrbits;
+  this.textContent='轨道：'+(showOrbits?'开':'关');};
 updateHud();buildList();
 </script></body></html>
 """
