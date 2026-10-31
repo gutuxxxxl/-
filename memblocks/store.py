@@ -170,6 +170,23 @@ class Store:
                     return x
         return None
 
+    def review(self, query=""):
+        """复习：把与查询相关的稳定项加权 +0.2（显式调用，inject 不改权重）。"""
+        q = _norm(query or "")
+        grams = {q[i:i + 2] for i in range(len(q) - 1)} if len(q) > 1 else ({q} if q else set())
+        boosted = 0
+        with self._locked():
+            data = _load(self.stable, [])
+            for x in data:
+                blob = _norm(x.get("text", "") + " " + " ".join(map(str, x.get("tags") or [])))
+                if not grams or any(g in blob for g in grams):
+                    x["weight"] = round(min(9.0, float(x.get("weight", 1.0)) + 0.2), 2)
+                    x["last_hit"] = time.strftime("%Y-%m-%d %H:%M")
+                    boosted += 1
+            if boosted:
+                _save(self.stable, data)
+        return boosted
+
     # ---------- 待办 ----------
     def todo_add(self, text, due=""):
         from .timeparse import normalize
