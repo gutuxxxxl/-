@@ -146,16 +146,32 @@ function resize(){ W=innerWidth; H=innerHeight; cv.width=W*dpr; cv.height=H*dpr;
 addEventListener('resize', resize); resize();
 
 const DAY=86400000, N=DATA.nodes, L=DATA.links, byId={}, now0=Date.now();
+const ARMS = 3;
 N.forEach((n,i)=>{
   byId[n.id]=n;
-  const a=(i/Math.max(1,N.length))*Math.PI*2, r=280+Math.random()*300;
-  n.x=Math.cos(a)*r; n.y=Math.sin(a)*r*0.62; n.z=(Math.random()-0.5)*220;
-  n.vx=n.vy=n.vz=0; n.flash=0;
+  const t = i/Math.max(1,N.length);
+  const arm = i % ARMS;
+  const r0 = 105 + 430*t + (Math.random()-.5)*60;
+  n.r0 = r0;
+  n.theta = arm*(Math.PI*2/ARMS) + t*2.3 + (Math.random()-.5)*.32;
+  n.omega = .05 + .24/(1+r0/240);
+  n.zOff = (Math.random()-.5)*90;
+  n.x = Math.cos(n.theta)*r0;
+  n.y = Math.sin(n.theta)*r0*0.62;
+  n.z = n.zOff;
+  n.flash = 0;
   n.lastMs = n.last ? Date.parse(n.last.replace(' ','T')) : now0;
   if (isNaN(n.lastMs)) n.lastMs = now0;
 });
 
-let rot=0, zoom=1.85, simDays=0, playing=true, speed=0.3, drag=false, last={x:0,y:0};
+const DUST = Array.from({length: 420}, () => ({
+  r: 80 + Math.random()*500,
+  th: Math.random()*Math.PI*2,
+  w: .02 + Math.random()*.10,
+  c: Math.random() < .55 ? '150,200,255' : '190,160,255',
+  s: Math.random() < .12 ? 1.8 : 1.1,
+}));
+let rot=0, zoom=1.45, simDays=0, playing=true, speed=0.3, drag=false, last={x:0,y:0};
 let hover=null, selected=null;
 const show={稳定:true,待办:true,归档:true};
 
@@ -170,21 +186,69 @@ function project(n){const c=Math.cos(rot),s=Math.sin(rot);
   const x=n.x*c-n.z*s,z=n.x*s+n.z*c,p=900/(900+z+600)*zoom;
   return {x:W/2+x*p,y:H/2+n.y*p,p,z};}
 
-function step(){
-  for(const n of N){n.vx*=.86;n.vy*=.86;n.vz*=.86;}
-  for(const l of L){const a=byId[l.s],b=byId[l.t];if(!a||!b)continue;
-    const dx=b.x-a.x,dy=b.y-a.y,dz=b.z-a.z,d=Math.hypot(dx,dy,dz)||1;
-    const f=(d-130)*.012,ux=dx/d*f,uy=dy/d*f,uz=dz/d*f;
-    a.vx+=ux;a.vy+=uy;a.vz+=uz;b.vx-=ux;b.vy-=uy;b.vz-=uz;}
-  for(const n of N){const r=retention(n),pull=(1-r)*.0035,d=Math.hypot(n.x,n.y,n.z)||1;
-    n.vx+=n.x/d*pull;n.vy+=n.y/d*pull;n.vz+=n.z/d*pull;
-    n.x+=n.vx;n.y+=n.vy;n.z+=n.vz;if(n.flash>0)n.flash*=.94;}
+function step(dt){
+  const now = performance.now()/1000;
+  for(const n of N){
+    const r = retention(n);
+    n.theta += n.omega * dt * (.55 + .9*r);      // 内圈快、外圈慢
+    const scale = 1 + .30*(1-r);                  // 快忘的往外飘
+    const rr = n.r0 * scale;
+    n.x = Math.cos(n.theta)*rr;
+    n.y = Math.sin(n.theta)*rr*0.62;
+    n.z = n.zOff + Math.sin(n.theta*1.6 + now*.25)*16;
+    if(n.flash>0) n.flash*=.94;
+  }
 }
 
 function draw(){
   ctx.clearRect(0,0,W,H);
-  for(let i=0;i<200;i++){const x=(i*137.5)%W,y=(i*89.3)%H;
-    ctx.fillStyle='rgba(140,180,255,'+(.03+((i%7)/120))+')';ctx.fillRect(x,y,1.3,1.3);}
+  const now = performance.now()/1000;
+  // 星云
+  const nebula = [[.28,.30,'#1b4c7a',.50],[.70,.26,'#352a68',.42],[.52,.74,'#123f5e',.38]];
+  for(const [fx,fy,col,al] of nebula){
+    const g = ctx.createRadialGradient(W*fx,H*fy,0,W*fx,H*fy,Math.max(W,H)*.42);
+    g.addColorStop(0, hexA(col, al*.55));
+    g.addColorStop(.45, hexA(col, al*.18));
+    g.addColorStop(1, hexA(col, 0));
+    ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
+  }
+  // 星系核心
+  const core = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,300*zoom);
+  core.addColorStop(0,'rgba(150,215,255,.18)');
+  core.addColorStop(.35,'rgba(90,150,230,.06)');
+  core.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(W/2,H/2,300*zoom,0,7); ctx.fill();
+
+  // 背景星尘（带闪烁）
+  for(let i=0;i<240;i++){
+    const x=(i*137.5)%W, y=(i*89.3)%H;
+    const tw = .5 + .5*Math.sin(now*.8 + i);
+    ctx.fillStyle='rgba(150,190,255,'+(.05+.10*tw).toFixed(3)+')';
+    ctx.fillRect(x,y,1.2,1.2);
+  }
+
+  // 旋臂星尘
+  for(const d of DUST){
+    const th = d.th + now*d.w;
+    const rr = d.r;
+    const x = Math.cos(th)*rr, z = Math.sin(th*1.3)*40, y = Math.sin(th)*rr*0.62;
+    const p = 900/(900+z+600)*zoom;
+    ctx.fillStyle = 'rgba(' + d.c + ',' + (.10 + .22*Math.abs(Math.sin(now*.6 + d.th))).toFixed(3) + ')';
+    ctx.fillRect(W/2 + x*p, H/2 + y*p, d.s, d.s);
+  }
+
+  // 轨道线
+  const pz = 900/(900+600)*zoom;
+  ctx.save();
+  const orbits = [[165,'rgba(89,224,255,.13)'],[300,'rgba(255,200,97,.10)'],[440,'rgba(185,140,255,.10)']];
+  for(const [rr,col] of orbits){
+    ctx.setLineDash([2,9]);
+    ctx.strokeStyle = col; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.ellipse(W/2,H/2, rr*pz, rr*pz*0.62, 0, 0, Math.PI*2);
+    ctx.stroke();
+  }
+  ctx.restore();
 
   const vis=N.filter(n=>show[n.kind]);
   for(const l of L){const a=byId[l.s],b=byId[l.t];
@@ -262,7 +326,7 @@ let lastTs=0;
 function tick(ts){
   const dt=lastTs?Math.min(.1,(ts-lastTs)/1000):0;lastTs=ts;
   if(playing) simDays+=dt*speed;
-  rot+=dt*.06;step();draw();
+  rot+=dt*.06;step(dt);draw();
   if(ts%500<20){updateHud();buildList();}
   requestAnimationFrame(tick);
 }
@@ -296,7 +360,7 @@ document.getElementById('speed').oninput=e=>{speed=parseFloat(e.target.value);
   document.getElementById('spd').textContent=speed.toFixed(2)+' 天/秒';};
 document.getElementById('review').onclick=()=>{N.forEach(n=>{
   n.weight=Math.min(9,n.weight+.4);n.lastMs=now0;n.flash=1;});};
-document.getElementById('reset').onclick=()=>{rot=0;zoom=1.85;simDays=0;};
+document.getElementById('reset').onclick=()=>{rot=0;zoom=1.45;simDays=0;};
 updateHud();buildList();
 </script></body></html>
 """
