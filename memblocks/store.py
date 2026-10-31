@@ -124,7 +124,7 @@ class Store:
         return t
 
     # ---------- 稳定区 ----------
-    def stable_add(self, text, tags=None, weight=1.0, protected=False):
+    def stable_add(self, text, tags=None, weight=1.0, protected=False, permanent=False):
         text = self._check(text, 200, "稳定记忆")
         with self._locked():
             data = _load(self.stable, [])
@@ -141,6 +141,7 @@ class Store:
                 "tags": tags or [],
                 "weight": float(weight),
                 "protected": bool(protected),
+                "permanent": bool(permanent),
                 "at": time.strftime("%Y-%m-%d %H:%M"),
                 "last_hit": time.strftime("%Y-%m-%d %H:%M"),
             }
@@ -148,13 +149,24 @@ class Store:
             evicted = []
             # 写满后按权重淘汰最老的（同权重先淘汰老的）
             while len(data) > STABLE_CAP:
-                pool = [x for x in data if not x.get("protected")] or data
+                pool = [x for x in data if not x.get("protected") and not x.get("permanent")] or data
                 victim = min(pool, key=lambda x: (float(x.get("weight", 1.0)), x.get("at", "")))
                 data.remove(victim)
                 evicted.append(victim)
                 self.log(f"warn: 稳定区超过 {STABLE_CAP} 条，淘汰 {victim['text'][:30]}")
             _save(self.stable, data)
             return {"item": item, "evicted": evicted, "count": len(data)}
+
+    def stable_pin(self, sid, on=True):
+        """把某条记忆设为恒星（永久）或取消。"""
+        with self._locked():
+            data = _load(self.stable, [])
+            for x in data:
+                if x.get("id") == sid:
+                    x["permanent"] = bool(on)
+                    _save(self.stable, data)
+                    return x
+        return None
 
     def stable_list(self):
         return _load(self.stable, [])
