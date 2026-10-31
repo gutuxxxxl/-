@@ -73,7 +73,8 @@ def make_handler(store: Store):
                     return self._json({"text": text})
                 if path == "/stable":
                     item = store.stable_add(body.get("text", ""), body.get("tags") or [],
-                                            float(body.get("weight", 1.0)))
+                                            float(body.get("weight", 1.0)),
+                                            permanent=bool(body.get("permanent")))
                     return self._json(item)
                 if path == "/todo":
                     return self._json(store.todo_add(body.get("text", ""), body.get("due", "")))
