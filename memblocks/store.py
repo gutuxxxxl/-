@@ -47,6 +47,7 @@ class Store:
         self.archive = self.root / "archive.jsonl"
         self.audit = self.root / "audit.log"
         self.lock = self.root / ".lock"
+        self.config = self.root / "config.json"
 
     # ---------- 基础 ----------
     def init(self):
@@ -58,7 +59,23 @@ class Store:
                 _save(p, d)
         if not self.archive.exists():
             self.archive.write_text("", encoding="utf-8")
-        return {"ok": True, "root": str(self.root), "stable_cap": STABLE_CAP}
+        cfg = self.config_get()
+        first_run = "first_run" not in cfg
+        if first_run:
+            cfg.setdefault("star_enabled", False)
+            cfg["first_run"] = True
+            self.config_set(**cfg)
+        return {"ok": True, "root": str(self.root), "stable_cap": STABLE_CAP,
+                "first_run": first_run, "star_enabled": bool(cfg.get("star_enabled"))}
+
+    def config_get(self):
+        return _load(self.config, {})
+
+    def config_set(self, **kw):
+        cfg = self.config_get()
+        cfg.update(kw)
+        _save(self.config, cfg)
+        return cfg
 
     def log(self, msg):
         with open(self.audit, "a", encoding="utf-8") as f:
