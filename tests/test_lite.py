@@ -111,6 +111,23 @@ class TestRobust(Base):
         self.assertTrue((snap / "archive.jsonl").exists())
 
 
+class TestFirstRun(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_first_run_flag(self):
+        self.st = Store(Path(self.tmp.name) / "fresh")
+        info = self.st.init()
+        self.assertTrue(info["first_run"])
+        self.assertFalse(info["star_enabled"])
+        self.st.config_set(star_enabled=True, first_run=False)
+        self.assertFalse(self.st.init()["first_run"])
+        self.assertTrue(self.st.config_get()["star_enabled"])
+
+
 class TestStar(Base):
     def test_render_html(self):
         from memblocks.star import render
