@@ -128,6 +128,33 @@ class TestFirstRun(unittest.TestCase):
         self.assertTrue(self.st.config_get()["star_enabled"])
 
 
+class TestPermanent(Base):
+    def test_permanent_never_evicted(self):
+        self.st.stable_add("人设：你是小鲸", weight=0.1, permanent=True)
+        for i in range(STABLE_CAP):
+            self.st.stable_add(f"普通{i}", weight=9.0)
+        texts = [x["text"] for x in self.st.stable_list()]
+        self.assertIn("人设：你是小鲸", texts)
+        self.assertEqual(len(texts), STABLE_CAP)
+
+    def test_pin_unpin(self):
+        r = self.st.stable_add("要固定的记忆")
+        sid = r["item"]["id"]
+        self.st.stable_pin(sid, True)
+        self.assertTrue([x for x in self.st.stable_list() if x["id"] == sid][0]["permanent"])
+        self.st.stable_pin(sid, False)
+        self.assertFalse([x for x in self.st.stable_list() if x["id"] == sid][0]["permanent"])
+
+    def test_star_marks_permanent(self):
+        from memblocks.star import build
+        self.st.stable_add("恒星记忆", permanent=True)
+        self.st.stable_add("普通记忆")
+        nodes = build(self.st)["nodes"]
+        flags = {n["label"]: n["permanent"] for n in nodes}
+        self.assertTrue(flags["恒星记忆"])
+        self.assertFalse(flags["普通记忆"])
+
+
 class TestStar(Base):
     def test_render_html(self):
         from memblocks.star import render
