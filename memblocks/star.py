@@ -178,14 +178,31 @@ N.forEach((n,i)=>{
   if (n.permanent) { n.r0 = 52; n.theta = Math.random()*6.283; n.omega = .02; }
 });
 
-const DUST_COUNT = Math.min(900, 180 + N.length*30);
-const DUST = Array.from({length: DUST_COUNT}, () => ({
-  r: 80 + Math.random()*500,
-  th: Math.random()*Math.PI*2,
-  w: .02 + Math.random()*.10,
-  c: Math.random() < .55 ? '150,200,255' : '190,160,255',
-  s: Math.random() < .12 ? 1.8 : 1.1,
-}));
+const DUST_COUNT = Math.min(1100, 260 + N.length*40);
+const DUST = Array.from({length: DUST_COUNT}, (_, i) => {
+  const t = i / DUST_COUNT;
+  const arm = i % 3;
+  const th = arm*(Math.PI*2/3) + t*5.4 + (Math.random()-.5)*.25;
+  const r = 85 + t*660 + (Math.random()-.5)*70;
+  return {
+    th, r,
+    w: .020 + .055/(1 + r/260),
+    c: Math.random() < .5 ? '150,205,255' : (Math.random() < .5 ? '200,170,255' : '255,225,180'),
+    s: Math.random() < .10 ? 1.9 : 1.15,
+    a: .05 + Math.random()*.18,
+  };
+});
+const CORE = Array.from({length: 320}, () => {
+  const g = (Math.random()+Math.random()+Math.random()-1.5)/1.5;
+  return {
+    r: Math.abs(g)*120 + Math.random()*22,
+    th: Math.random()*Math.PI*2,
+    s: Math.random() < .12 ? 1.8 : 1.0,
+    a: .10 + Math.random()*.35,
+    c: Math.random() < .65 ? '255,236,190' : '190,225,255',
+  };
+});
+const DUST_ROT0 = performance.now()/1000;
 let rot=0, zoom=1.62, simDays=0, playing=true, speed=0.3, drag=false, last={x:0,y:0};
 let hover=null, selected=null, showOrbits=true;
 const show={稳定:true,待办:true,归档:true};
@@ -222,121 +239,127 @@ function step(dt){
 function draw(){
   ctx.clearRect(0,0,W,H);
   const now = performance.now()/1000;
-  // 星云
-  const nebula = [[.28,.30,'#1b4c7a',.50],[.70,.26,'#352a68',.42],[.52,.74,'#123f5e',.38]];
-  for(const [fx,fy,col,al] of nebula){
-    const g = ctx.createRadialGradient(W*fx,H*fy,0,W*fx,H*fy,Math.max(W,H)*.42);
+  const cx = W/2, cy = H/2;
+
+  const neb = [[.30,.30,'#123f68',.55],[.72,.26,'#2a2154',.48],[.50,.78,'#0d3550',.42],[.16,.70,'#1c2e5c',.32]];
+  for(const [fx,fy,col,al] of neb){
+    const g = ctx.createRadialGradient(W*fx,H*fy,0,W*fx,H*fy,Math.max(W,H)*.45);
     g.addColorStop(0, hexA(col, al*.55));
     g.addColorStop(.45, hexA(col, al*.18));
     g.addColorStop(1, hexA(col, 0));
     ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
   }
-  // 星系核心
-  const core = ctx.createRadialGradient(W/2,H/2,0,W/2,H/2,300*zoom);
-  core.addColorStop(0,'rgba(150,215,255,.18)');
-  core.addColorStop(.35,'rgba(90,150,230,.06)');
+
+  let core = ctx.createRadialGradient(cx,cy,0,cx,cy,200*zoom);
+  core.addColorStop(0,'rgba(255,244,214,.50)');
+  core.addColorStop(.16,'rgba(170,225,255,.20)');
+  core.addColorStop(.42,'rgba(95,155,235,.07)');
   core.addColorStop(1,'rgba(0,0,0,0)');
-  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(W/2,H/2,300*zoom,0,7); ctx.fill();
+  ctx.fillStyle = core; ctx.beginPath(); ctx.arc(cx,cy,200*zoom,0,7); ctx.fill();
 
-  // 背景星尘（带闪烁）
-  for(let i=0;i<240;i++){
-    const x=(i*137.5)%W, y=(i*89.3)%H;
-    const tw = .5 + .5*Math.sin(now*.8 + i);
-    ctx.fillStyle='rgba(150,190,255,'+(.05+.10*tw).toFixed(3)+')';
-    ctx.fillRect(x,y,1.2,1.2);
-  }
-
-  // 旋臂星尘
-  for(const d of DUST){
-    const th = d.th + now*d.w;
-    const rr = d.r;
-    const x = Math.cos(th)*rr, z = Math.sin(th*1.3)*40, y = Math.sin(th)*rr*0.62;
-    const p = 900/(900+z+600)*zoom;
-    ctx.fillStyle = 'rgba(' + d.c + ',' + (.10 + .22*Math.abs(Math.sin(now*.6 + d.th))).toFixed(3) + ')';
-    ctx.fillRect(W/2 + x*p, H/2 + y*p, d.s, d.s);
-  }
-
-  // 轨道线
-  const pz = 900/(900+600)*zoom;
   ctx.save();
-  const orbits = [[ORBIT.稳定,'rgba(89,224,255,.30)','稳定区'],[ORBIT.待办,'rgba(255,200,97,.24)','待办'],[ORBIT.归档,'rgba(185,140,255,.22)','归档']];
-  for(const [rr,col,label] of orbits){
-    ctx.setLineDash([3,7]);
-    ctx.strokeStyle = col; ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.ellipse(W/2,H/2, rr*pz, rr*pz*0.62, 0, 0, Math.PI*2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = col; ctx.font='11px "Microsoft YaHei",sans-serif';
-    ctx.fillText(label, W/2 + rr*pz + 8, H/2 + 4);
+  ctx.globalCompositeOperation = 'lighter';
+  const ring = ctx.createRadialGradient(cx,cy,96*zoom,cx,cy,128*zoom);
+  ring.addColorStop(0,'rgba(120,200,255,0)');
+  ring.addColorStop(.5,'rgba(160,225,255,.16)');
+  ring.addColorStop(1,'rgba(120,200,255,0)');
+  ctx.fillStyle = ring; ctx.beginPath(); ctx.arc(cx,cy,128*zoom,0,7); ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for(const s of CORE){
+    const th = s.th + now*.35;
+    const x = Math.cos(th)*s.r, y = Math.sin(th)*s.r*0.62, z = Math.sin(th*1.3)*16;
+    const pr = 900/(900+z+600)*zoom;
+    ctx.fillStyle = 'rgba(' + s.c + ',' + s.a.toFixed(3) + ')';
+    ctx.beginPath(); ctx.arc(cx + x*pr, cy + y*pr, s.s, 0, 7); ctx.fill();
+  }
+  for(const d of DUST){
+    const th = d.th + (now - DUST_ROT0)*d.w*6;
+    const x = Math.cos(th)*d.r, y = Math.sin(th)*d.r*0.62;
+    const z = Math.sin(th*.8)*d.r*.05;
+    const pr = 900/(900+z+600)*zoom;
+    const tw = .55 + .45*Math.sin(now*.7 + d.th*3);
+    ctx.fillStyle = 'rgba(' + d.c + ',' + (d.a*tw).toFixed(3) + ')';
+    ctx.fillRect(cx + x*pr, cy + y*pr, d.s, d.s);
   }
   ctx.restore();
 
-  const vis=N.filter(n=>show[n.kind]);
-  for(const l of L){const a=byId[l.s],b=byId[l.t];
-    if(!a||!b||!show[a.kind]||!show[b.kind])continue;
-    const pa=project(a),pb=project(b),rr=Math.min(retention(a),retention(b));
-    ctx.strokeStyle='rgba(90,150,220,'+(0.05+0.30*rr*l.w).toFixed(3)+')';ctx.lineWidth=.55+1.1*l.w;
-    ctx.beginPath();ctx.moveTo(pa.x,pa.y);ctx.lineTo(pb.x,pb.y);ctx.stroke();}
-
-  // 每条记忆自己的椭圆轨道
   if(showOrbits){
     ctx.save();
-    for(const n of vis){
+    for(const n of N.filter(x=>show[x.kind])){
       const scale = 1 + .30*(1-retention(n));
       const a = n.r0*scale, b = a*(1-n.ecc);
-      ctx.strokeStyle = n.permanent ? 'rgba(255,215,106,.14)' : hexA(n.color,.09);
+      ctx.strokeStyle = n.permanent ? 'rgba(255,215,106,.16)' : hexA(n.color,.085);
       ctx.lineWidth = .8;
       ctx.beginPath();
-      for(let t=0;t<=Math.PI*2+.05;t+=.1){
-        const px = Math.cos(t)*a, py = Math.sin(t)*b*0.62;
-        const p = project({x:px, y:py, z:Math.sin(t+n.phase)*a*n.incl*0.35 + n.zOff*.25});
+      for(let t=0;t<=Math.PI*2+.05;t+=.12){
+        const p = project({x:Math.cos(t)*a, y:Math.sin(t)*b*0.62,
+                           z:Math.sin(t+n.phase)*a*n.incl*0.35 + n.zOff*.25});
         t===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y);
       }
       ctx.stroke();
     }
     ctx.restore();
   }
-  // 拖尾
-  for(const n of vis){
+
+  for(const n of N.filter(x=>show[x.kind])){
     if(n.trail.length < 2) continue;
     ctx.beginPath();
     n.trail.forEach((pt,i)=>{
       const p = project({x:pt[0],y:pt[1],z:pt[2]});
       i ? ctx.lineTo(p.x,p.y) : ctx.moveTo(p.x,p.y);
     });
-    ctx.strokeStyle = n.permanent ? 'rgba(255,215,106,.22)' : hexA(n.color,.16);
+    ctx.strokeStyle = n.permanent ? 'rgba(255,215,106,.22)' : hexA(n.color,.15);
     ctx.lineWidth = 1.1; ctx.stroke();
   }
 
-  const pts=vis.map(n=>({n,...project(n)})).sort((a,b)=>a.z-b.z);
+  for(const l of L){ const a=byId[l.s], b=byId[l.t];
+    if(!a||!b||!show[a.kind]||!show[b.kind]) continue;
+    const pa=project(a), pb=project(b), rr=Math.min(retention(a),retention(b));
+    const mx=(pa.x+pb.x)/2, my=(pa.y+pb.y)/2;
+    const qx=mx+(cx-mx)*.18, qy=my+(cy-my)*.18;
+    ctx.strokeStyle='rgba(110,170,240,'+(0.05+0.30*rr*l.w).toFixed(3)+')';
+    ctx.lineWidth=.5+1.2*l.w;
+    ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.quadraticCurveTo(qx,qy,pb.x,pb.y); ctx.stroke();
+  }
+
+  const vis = N.filter(n=>show[n.kind]);
+  const pts = vis.map(n=>({n,...project(n)})).sort((a,b)=>a.z-b.z);
   for(const it of pts){
-    const n=it.n,r=retention(n);
+    const n=it.n, r=retention(n);
     const col = n.permanent ? '#ffd76a' : n.color;
     let rad=(2.2+Math.min(9,n.weight)*(.45+.75*r))*it.p*(1+.35*n.flash);
     if(n.permanent) rad *= 1.7;
     const alpha=n.permanent?1:(.10+.90*r);
+
+    ctx.save();
+    ctx.shadowColor = hexA(col, .55*alpha);
+    ctx.shadowBlur = n.permanent ? 26 : 14*r*it.p;
     if(r>.18){
       const g=ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*4.6);
       g.addColorStop(0,hexA(col,.95*alpha));g.addColorStop(.35,hexA(col,.36*alpha));
       g.addColorStop(1,hexA(col,0));
       ctx.fillStyle=g;ctx.beginPath();ctx.arc(it.x,it.y,rad*4.6,0,7);ctx.fill();
     }
-    if(n.permanent){                         // 十字星芒
-      const L=rad*5.2;
-      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const gg=ctx.createLinearGradient(it.x,it.y,it.x+dx*L,it.y+dy*L);
-        gg.addColorStop(0,'rgba(255,235,170,.55)');gg.addColorStop(1,'rgba(255,215,106,0)');
-        ctx.strokeStyle=gg;ctx.lineWidth=1.6;
-        ctx.beginPath();ctx.moveTo(it.x,it.y);ctx.lineTo(it.x+dx*L,it.y+dy*L);ctx.stroke();
-      }
-    }
     ctx.fillStyle=hexA(col,Math.max(.12,alpha));
     ctx.beginPath();ctx.arc(it.x,it.y,Math.max(1,rad),0,7);ctx.fill();
-    if(r<.25){ctx.strokeStyle='rgba(120,140,170,.32)';ctx.lineWidth=.8;
-      ctx.beginPath();ctx.arc(it.x,it.y,Math.max(2,rad+3),0,7);ctx.stroke();}
-    if(selected===n){ctx.strokeStyle='#7ff3ff';ctx.lineWidth=1.6;
-      ctx.beginPath();ctx.arc(it.x,it.y,rad+9,0,7);ctx.stroke();}
+    ctx.restore();
+
+    if(n.permanent){
+      const L2=rad*6.2;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const gg=ctx.createLinearGradient(it.x,it.y,it.x+dx*L2,it.y+dy*L2);
+        gg.addColorStop(0,'rgba(255,238,180,.60)');gg.addColorStop(1,'rgba(255,215,106,0)');
+        ctx.strokeStyle=gg;ctx.lineWidth=1.6;
+        ctx.beginPath();ctx.moveTo(it.x,it.y);ctx.lineTo(it.x+dx*L2,it.y+dy*L2);ctx.stroke();
+      }
+    }
+    if(r<.25){ ctx.strokeStyle='rgba(120,140,170,.30)'; ctx.lineWidth=.8;
+      ctx.beginPath();ctx.arc(it.x,it.y,Math.max(2,rad+3),0,7);ctx.stroke(); }
+    if(selected===n){ ctx.strokeStyle='#7ff3ff'; ctx.lineWidth=1.6;
+      ctx.beginPath();ctx.arc(it.x,it.y,rad+9,0,7);ctx.stroke(); }
     if(it.p>.5&&r>.34){ctx.fillStyle='rgba(215,232,255,'+(.32+.5*r).toFixed(2)+')';
       ctx.font='12px "Microsoft YaHei",sans-serif';
       ctx.fillText(n.label.slice(0,22),it.x+rad+6,it.y+4);}
