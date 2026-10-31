@@ -90,7 +90,7 @@ store.restore("memories/snapshots/snap-20261031-060000-ab12")
 
 ```bash
 python -m unittest discover -s tests -v
-# 61 tests OK
+# 66 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
@@ -539,3 +539,18 @@ python -m memblocks.cli stable display --id st-xxxx    # 已有记忆改成仅�
 双击后会弹出提示，例如「已记录：用户是律师… · 权重 1.2」。
 
 写回需要星图由面板（HTTP）提供；单独打开的 HTML 是只读演示。
+
+### 双击加权的边界（已测）
+
+| 场景 | 结果 |
+| --- | --- |
+| 连续点 100 次 | 权重封顶 9.0 |
+| 20 线程各点 5 次 | 精确累计，无丢失 |
+| 待办 ID | 拒绝，不加权 |
+| 不存在的 ID | 返回 null |
+| 空 ID / 带空格 | 拒绝 |
+| `abc; rm -rf /` | 拒绝（ID 白名单） |
+| 超长 / 中文 ID | 拒绝 |
+| 面板缓存 | 加权后自动失效，立刻能读到新值 |
+
+ID 只允许 `A-Za-z0-9_-`、长度 ≤64，防止拼进 SSH 命令时被注入。
