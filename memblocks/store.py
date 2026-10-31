@@ -1,5 +1,6 @@
 """三层记忆存储：稳定区（有上限、按权重淘汰）/ 待办 / 归档块。"""
 import json
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -35,6 +36,9 @@ def _norm(text):
     t = (text or "").strip().lower().replace("号", "日").replace("是", "").replace("为", "")
     t = re.sub(r"[\s\u3000]+", "", t)
     return re.sub(r"[，。,.、；;：:！!？?\-—_()（）\[\]【】]", "", t)
+
+
+_PROC_LOCK = threading.RLock()
 
 
 class Store:
@@ -91,28 +95,33 @@ class Store:
     @contextmanager
     def _locked(self):
         self.root.mkdir(parents=True, exist_ok=True)
-        fh = open(self.lock, "a+")
-        try:
+        with _PROC_LOCK:
+            fh = open(self.lock, "a+")
             try:
-                import msvcrt
-                msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
-            except ImportError:
-                import fcntl
-                fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
-            yield
-        finally:
-            try:
-                import msvcrt
-                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
-            except ImportError:
                 try:
+                    import msvcrt
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_LOCK, 1)
+                except ImportError:
                     import fcntl
-                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+                except OSError:
+                    # 同进程多线程争锁时 Windows 会报 deadlock avoided，
+                    # 进程内已有 RLock 保序，这里直接放行
+                    pass
+                yield
+            finally:
+                try:
+                    import msvcrt
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                except ImportError:
+                    try:
+                        import fcntl
+                        fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                    except Exception:
+                        pass
                 except Exception:
                     pass
-            except Exception:
-                pass
-            fh.close()
+                fh.close()
 
     def _check(self, text, limit, kind):
         t = (text or "").strip()
@@ -190,7 +199,7 @@ class Store:
             data = _load(self.stable, [])
             for x in data:
                 if x.get("id") == sid:
-                    x["weight"] = round(float(x.get("weight", 1.0)) + 0.2, 2)
+                    x["weight"] = round(min(9.0, float(x.get("weight", 1.0)) + 0.2), 2)
                     x["last_hit"] = time.strftime("%Y-%m-%d %H:%M")
                     _save(self.stable, data)
                     return x
