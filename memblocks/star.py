@@ -366,22 +366,6 @@ function draw(){
       ctx.fillStyle = halo;
       ctx.beginPath(); ctx.arc(it.x,it.y,rad*9*pulse,0,7); ctx.fill();
 
-      // 八道星芒：4 长 + 4 短（缓慢旋转）
-      const spin = now*.12;
-      for(let k=0;k<8;k++){
-        const long = k % 2 === 0;
-        const ang = spin + k*Math.PI/4;
-        const len = rad*(long ? 7.0 : 3.0);
-        const w = long ? 1.6 : .9;
-        const dx = Math.cos(ang), dy = Math.sin(ang);
-        const gg = ctx.createLinearGradient(it.x,it.y,it.x+dx*len,it.y+dy*len);
-        gg.addColorStop(0,'rgba(255,250,225,.38)');
-        gg.addColorStop(.35,'rgba(255,225,150,.13)');
-        gg.addColorStop(1,'rgba(255,200,90,0)');
-        ctx.strokeStyle = gg; ctx.lineWidth = w; ctx.lineCap='round';
-        ctx.beginPath(); ctx.moveTo(it.x,it.y); ctx.lineTo(it.x+dx*len, it.y+dy*len); ctx.stroke();
-      }
-
       // 白热核心
       const core = ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*2.2);
       core.addColorStop(0,'rgba(255,252,236,.90)');
