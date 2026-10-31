@@ -90,7 +90,7 @@ store.restore("memories/snapshots/snap-20261031-060000-ab12")
 
 ```bash
 python -m unittest discover -s tests -v
-# 51 tests OK
+# 56 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
@@ -294,28 +294,28 @@ python -m memblocks.cli star --out memory-map.html
 
 已测：父路径是文件、目录 ACL 拒绝写入、盘符不存在。
 
-## 接入 DSH（DeepSeek Harness）
+## 接入别的程序（HTTP 接口）
 
-首次安装时除了星图，还会问一句：
-
-```
-是否接入 DSH（DeepSeek Harness）？会把记忆注入到 DSH 的对话里 [y/N]
-```
-
-选 y 之后：
+memblocks 本体是 Python，别的宿主（DSH、n8n、脚本）通过 HTTP 对接，不用改宿主代码：
 
 ```bash
-python -m memblocks.cli dsh          # 看接入步骤
-python -m memblocks.cli dsh --json   # 机器可读，方便脚本接
-config --dsh on|off                  # 随时开关
+python -m memblocks.cli serve --port 8765
 ```
 
-接入方式（三步）：
+| 接口 | 说明 |
+| --- | --- |
+| `POST /inject` | `{"query":"...","max_tokens":800}` → 注入文本 |
+| `POST /stable` | 加长期事实 |
+| `POST /todo` | 加待办（支持「下周三」） |
+| `POST /block` | 加归档块 |
+| `POST /review` | 给相关记忆加权 |
+| `GET /memories` | 列出稳定区 + 待办 |
+| `GET /star` | 记忆星图 HTML |
+| `GET /health` | 存活检查 |
 
-1. 在 DSH 里加一个 shell 工具，执行
-   `python -m memblocks.cli --root "<数据目录>" inject --query "<用户这句话>" --max-tokens 800`，
-   把输出拼到系统提示末尾
-2. 回复后可选执行 `review --query`，让用到的记忆加权
-3. 每天跑一次 `janitor`
+客户端与示例：
 
-状态存在 `config.json` 的 `dsh_enabled` 字段。
+- `integrations/dsh/README.md`：DSH 接入的三种方式（shell 工具 / Node 客户端 / AstrBot）
+- `integrations/dsh/memblocks-client.mjs`：零依赖 Node 客户端
+
+接口默认只监听 `127.0.0.1`，不对外暴露。
