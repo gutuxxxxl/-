@@ -200,13 +200,13 @@ const DUST = Array.from({length: DUST_COUNT}, (_, i) => {
     a: .05 + Math.random()*.18,
   };
 });
-const CORE = Array.from({length: 320}, () => {
+const CORE = Array.from({length: 150}, () => {
   const g = (Math.random()+Math.random()+Math.random()-1.5)/1.5;
   return {
     r: Math.abs(g)*120 + Math.random()*22,
     th: Math.random()*Math.PI*2,
     s: Math.random() < .12 ? 1.8 : 1.0,
-    a: .10 + Math.random()*.35,
+    a: .05 + Math.random()*.18,
     c: Math.random() < .65 ? '255,236,190' : '190,225,255',
   };
 });
@@ -339,7 +339,7 @@ function draw(){
     const n=it.n, r=retention(n);
     const col = n.permanent ? '#ffd76a' : n.color;
     let rad=(2.2+Math.min(9,n.weight)*(.45+.75*r))*it.p*(1+.35*n.flash);
-    if(n.permanent) rad *= 1.7;
+    if(n.permanent) rad *= 2.1;
     const alpha=n.permanent?1:(.10+.90*r);
 
     ctx.save();
@@ -356,13 +356,43 @@ function draw(){
     ctx.restore();
 
     if(n.permanent){
-      const L2=rad*6.2;
-      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
-        const gg=ctx.createLinearGradient(it.x,it.y,it.x+dx*L2,it.y+dy*L2);
-        gg.addColorStop(0,'rgba(255,238,180,.60)');gg.addColorStop(1,'rgba(255,215,106,0)');
-        ctx.strokeStyle=gg;ctx.lineWidth=1.6;
-        ctx.beginPath();ctx.moveTo(it.x,it.y);ctx.lineTo(it.x+dx*L2,it.y+dy*L2);ctx.stroke();
+      const pulse = 1 + .08*Math.sin(now*1.6);
+      // 外层柔光
+      const halo = ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*9*pulse);
+      halo.addColorStop(0,'rgba(255,246,214,.20)');
+      halo.addColorStop(.28,'rgba(255,214,120,.09)');
+      halo.addColorStop(.65,'rgba(255,180,80,.04)');
+      halo.addColorStop(1,'rgba(255,170,60,0)');
+      ctx.fillStyle = halo;
+      ctx.beginPath(); ctx.arc(it.x,it.y,rad*9*pulse,0,7); ctx.fill();
+
+      // 八道星芒：4 长 + 4 短（缓慢旋转）
+      const spin = now*.12;
+      for(let k=0;k<8;k++){
+        const long = k % 2 === 0;
+        const ang = spin + k*Math.PI/4;
+        const len = rad*(long ? 7.0 : 3.0);
+        const w = long ? 1.6 : .9;
+        const dx = Math.cos(ang), dy = Math.sin(ang);
+        const gg = ctx.createLinearGradient(it.x,it.y,it.x+dx*len,it.y+dy*len);
+        gg.addColorStop(0,'rgba(255,250,225,.60)');
+        gg.addColorStop(.35,'rgba(255,225,150,.22)');
+        gg.addColorStop(1,'rgba(255,200,90,0)');
+        ctx.strokeStyle = gg; ctx.lineWidth = w; ctx.lineCap='round';
+        ctx.beginPath(); ctx.moveTo(it.x,it.y); ctx.lineTo(it.x+dx*len, it.y+dy*len); ctx.stroke();
       }
+
+      // 白热核心
+      const core = ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*2.2);
+      core.addColorStop(0,'rgba(255,255,248,1)');
+      core.addColorStop(.45,'rgba(255,242,196,.85)');
+      core.addColorStop(1,'rgba(255,210,110,0)');
+      ctx.fillStyle = core;
+      ctx.beginPath(); ctx.arc(it.x,it.y,rad*2.2,0,7); ctx.fill();
+
+      // 细环
+      ctx.strokeStyle = 'rgba(255,232,170,.22)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(it.x,it.y,rad*3.4*pulse,0,7); ctx.stroke();
     }
     if(r<.25){ ctx.strokeStyle='rgba(120,140,170,.30)'; ctx.lineWidth=.8;
       ctx.beginPath();ctx.arc(it.x,it.y,Math.max(2,rad+3),0,7);ctx.stroke(); }
