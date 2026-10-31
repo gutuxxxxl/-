@@ -38,6 +38,9 @@ def _main():
     b.add_argument("--summary", default="")
     b.add_argument("--tags", default="")
 
+    stp = sub.add_parser("star")
+    stp.add_argument("--out", default="memory-map.html")
+
     i = sub.add_parser("inject")
     i.add_argument("--query", default="")
     i.add_argument("--max-tokens", type=int, default=800)
@@ -76,6 +79,9 @@ def _main():
             print(json.dumps(st.block_add(args.summary, tags(args.tags)), ensure_ascii=False, indent=2))
         else:
             print(json.dumps(st.block_list(), ensure_ascii=False, indent=2))
+    elif args.cmd == "star":
+        from .star import render
+        print(render(st, args.out))
     elif args.cmd == "inject":
         print(st.inject(args.query, args.max_tokens))
     elif args.cmd == "janitor":
