@@ -60,7 +60,8 @@ class Store:
         if not self.archive.exists():
             self.archive.write_text("", encoding="utf-8")
         cfg = self.config_get()
-        first_run = "first_run" not in cfg
+        has_data = bool(_load(self.stable, [])) or bool(_load(self.todo, [])) or any(self.blocks.glob("*.json"))
+        first_run = ("first_run" not in cfg) and not has_data
         if first_run:
             cfg.setdefault("star_enabled", False)
             cfg["first_run"] = True
