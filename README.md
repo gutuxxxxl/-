@@ -157,10 +157,13 @@ python bench.py
 
 ## 记忆星图
 
+![记忆星图](docs/star.png)
+
 把三层记忆画成一张可交互的星图（单文件 HTML，无依赖）：
 
 ```bash
 python -m memblocks.cli star --out memory-map.html
+# 打开 memory-map.html 即可，无需服务器
 ```
 
 - 稳定区：青色（大小 = 权重）
