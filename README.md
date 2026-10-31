@@ -90,7 +90,7 @@ store.restore("memories/snapshots/snap-20261031-060000-ab12")
 
 ```bash
 python -m unittest discover -s tests -v
-# 50 tests OK
+# 51 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
@@ -293,3 +293,29 @@ python -m memblocks.cli star --out memory-map.html
 ```
 
 已测：父路径是文件、目录 ACL 拒绝写入、盘符不存在。
+
+## 接入 DSH（DeepSeek Harness）
+
+首次安装时除了星图，还会问一句：
+
+```
+是否接入 DSH（DeepSeek Harness）？会把记忆注入到 DSH 的对话里 [y/N]
+```
+
+选 y 之后：
+
+```bash
+python -m memblocks.cli dsh          # 看接入步骤
+python -m memblocks.cli dsh --json   # 机器可读，方便脚本接
+config --dsh on|off                  # 随时开关
+```
+
+接入方式（三步）：
+
+1. 在 DSH 里加一个 shell 工具，执行
+   `python -m memblocks.cli --root "<数据目录>" inject --query "<用户这句话>" --max-tokens 800`，
+   把输出拼到系统提示末尾
+2. 回复后可选执行 `review --query`，让用到的记忆加权
+3. 每天跑一次 `janitor`
+
+状态存在 `config.json` 的 `dsh_enabled` 字段。
