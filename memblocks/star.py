@@ -339,7 +339,7 @@ function draw(){
     const n=it.n, r=retention(n);
     const col = n.permanent ? '#ffd76a' : n.color;
     let rad=(2.2+Math.min(9,n.weight)*(.45+.75*r))*it.p*(1+.35*n.flash);
-    if(n.permanent) rad *= 2.1;
+    if(n.permanent) rad *= 1.9;
     const alpha=n.permanent?1:(.10+.90*r);
 
     ctx.save();
@@ -359,9 +359,9 @@ function draw(){
       const pulse = 1 + .08*Math.sin(now*1.6);
       // 外层柔光
       const halo = ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*9*pulse);
-      halo.addColorStop(0,'rgba(255,246,214,.20)');
-      halo.addColorStop(.28,'rgba(255,214,120,.09)');
-      halo.addColorStop(.65,'rgba(255,180,80,.04)');
+      halo.addColorStop(0,'rgba(255,246,214,.12)');
+      halo.addColorStop(.28,'rgba(255,214,120,.05)');
+      halo.addColorStop(.65,'rgba(255,180,80,.02)');
       halo.addColorStop(1,'rgba(255,170,60,0)');
       ctx.fillStyle = halo;
       ctx.beginPath(); ctx.arc(it.x,it.y,rad*9*pulse,0,7); ctx.fill();
@@ -375,8 +375,8 @@ function draw(){
         const w = long ? 1.6 : .9;
         const dx = Math.cos(ang), dy = Math.sin(ang);
         const gg = ctx.createLinearGradient(it.x,it.y,it.x+dx*len,it.y+dy*len);
-        gg.addColorStop(0,'rgba(255,250,225,.60)');
-        gg.addColorStop(.35,'rgba(255,225,150,.22)');
+        gg.addColorStop(0,'rgba(255,250,225,.38)');
+        gg.addColorStop(.35,'rgba(255,225,150,.13)');
         gg.addColorStop(1,'rgba(255,200,90,0)');
         ctx.strokeStyle = gg; ctx.lineWidth = w; ctx.lineCap='round';
         ctx.beginPath(); ctx.moveTo(it.x,it.y); ctx.lineTo(it.x+dx*len, it.y+dy*len); ctx.stroke();
@@ -384,14 +384,14 @@ function draw(){
 
       // 白热核心
       const core = ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*2.2);
-      core.addColorStop(0,'rgba(255,255,248,1)');
-      core.addColorStop(.45,'rgba(255,242,196,.85)');
+      core.addColorStop(0,'rgba(255,252,236,.90)');
+      core.addColorStop(.45,'rgba(255,238,190,.55)');
       core.addColorStop(1,'rgba(255,210,110,0)');
       ctx.fillStyle = core;
       ctx.beginPath(); ctx.arc(it.x,it.y,rad*2.2,0,7); ctx.fill();
 
       // 细环
-      ctx.strokeStyle = 'rgba(255,232,170,.22)'; ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(255,232,170,.13)'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(it.x,it.y,rad*3.4*pulse,0,7); ctx.stroke();
     }
     if(r<.25){ ctx.strokeStyle='rgba(120,140,170,.30)'; ctx.lineWidth=.8;
