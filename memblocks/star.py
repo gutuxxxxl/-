@@ -147,13 +147,20 @@ addEventListener('resize', resize); resize();
 
 const DAY=86400000, N=DATA.nodes, L=DATA.links, byId={}, now0=Date.now();
 const ARMS = 3;
+// 三层轨道：稳定区在内、待办居中、归档在外
+const ORBIT = {稳定:150, 待办:310, 归档:460};
+const layerIdx = {稳定:0, 待办:0, 归档:0};
+const layerCount = {稳定:0, 待办:0, 归档:0};
+N.forEach(n=>{ layerCount[n.kind]=(layerCount[n.kind]||0)+1; });
 N.forEach((n,i)=>{
   byId[n.id]=n;
-  const t = i/Math.max(1,N.length);
-  const arm = i % ARMS;
-  const r0 = 105 + 430*t + (Math.random()-.5)*60;
+  const k = n.kind, base = ORBIT[k] || 320;
+  const idx = layerIdx[k]++, cnt = Math.max(1, layerCount[k]);
+  const t = idx/Math.max(1,cnt);                       // 层内分布
+  const arm = idx % ARMS;
+  const r0 = base + (t-.5)*34 + (Math.random()-.5)*14; // 层内窄幅铺开
   n.r0 = r0;
-  n.theta = arm*(Math.PI*2/ARMS) + t*2.3 + (Math.random()-.5)*.32;
+  n.theta = arm*(Math.PI*2/ARMS) + t*2.6 + (Math.random()-.5)*.25;
   n.omega = .05 + .24/(1+r0/240);
   n.zOff = (Math.random()-.5)*90;
   n.x = Math.cos(n.theta)*r0;
@@ -164,14 +171,15 @@ N.forEach((n,i)=>{
   if (isNaN(n.lastMs)) n.lastMs = now0;
 });
 
-const DUST = Array.from({length: 420}, () => ({
+const DUST_COUNT = Math.min(900, 180 + N.length*30);
+const DUST = Array.from({length: DUST_COUNT}, () => ({
   r: 80 + Math.random()*500,
   th: Math.random()*Math.PI*2,
   w: .02 + Math.random()*.10,
   c: Math.random() < .55 ? '150,200,255' : '190,160,255',
   s: Math.random() < .12 ? 1.8 : 1.1,
 }));
-let rot=0, zoom=1.45, simDays=0, playing=true, speed=0.3, drag=false, last={x:0,y:0};
+let rot=0, zoom=1.62, simDays=0, playing=true, speed=0.3, drag=false, last={x:0,y:0};
 let hover=null, selected=null;
 const show={稳定:true,待办:true,归档:true};
 
@@ -240,13 +248,16 @@ function draw(){
   // 轨道线
   const pz = 900/(900+600)*zoom;
   ctx.save();
-  const orbits = [[165,'rgba(89,224,255,.13)'],[300,'rgba(255,200,97,.10)'],[440,'rgba(185,140,255,.10)']];
-  for(const [rr,col] of orbits){
-    ctx.setLineDash([2,9]);
-    ctx.strokeStyle = col; ctx.lineWidth = 1;
+  const orbits = [[ORBIT.稳定,'rgba(89,224,255,.30)','稳定区'],[ORBIT.待办,'rgba(255,200,97,.24)','待办'],[ORBIT.归档,'rgba(185,140,255,.22)','归档']];
+  for(const [rr,col,label] of orbits){
+    ctx.setLineDash([3,7]);
+    ctx.strokeStyle = col; ctx.lineWidth = 1.2;
     ctx.beginPath();
     ctx.ellipse(W/2,H/2, rr*pz, rr*pz*0.62, 0, 0, Math.PI*2);
     ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = col; ctx.font='11px "Microsoft YaHei",sans-serif';
+    ctx.fillText(label, W/2 + rr*pz + 8, H/2 + 4);
   }
   ctx.restore();
 
@@ -254,7 +265,7 @@ function draw(){
   for(const l of L){const a=byId[l.s],b=byId[l.t];
     if(!a||!b||!show[a.kind]||!show[b.kind])continue;
     const pa=project(a),pb=project(b),rr=Math.min(retention(a),retention(b));
-    ctx.strokeStyle='rgba(90,150,220,'+(0.04+0.26*rr*l.w).toFixed(3)+')';ctx.lineWidth=.7;
+    ctx.strokeStyle='rgba(90,150,220,'+(0.05+0.30*rr*l.w).toFixed(3)+')';ctx.lineWidth=.55+1.1*l.w;
     ctx.beginPath();ctx.moveTo(pa.x,pa.y);ctx.lineTo(pb.x,pb.y);ctx.stroke();}
 
   const pts=vis.map(n=>({n,...project(n)})).sort((a,b)=>a.z-b.z);
@@ -360,7 +371,7 @@ document.getElementById('speed').oninput=e=>{speed=parseFloat(e.target.value);
   document.getElementById('spd').textContent=speed.toFixed(2)+' 天/秒';};
 document.getElementById('review').onclick=()=>{N.forEach(n=>{
   n.weight=Math.min(9,n.weight+.4);n.lastMs=now0;n.flash=1;});};
-document.getElementById('reset').onclick=()=>{rot=0;zoom=1.45;simDays=0;};
+document.getElementById('reset').onclick=()=>{rot=0;zoom=1.62;simDays=0;};
 updateHud();buildList();
 </script></body></html>
 """
