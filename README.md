@@ -90,7 +90,7 @@ store.restore("memories/snapshots/snap-20261031-060000-ab12")
 
 ```bash
 python -m unittest discover -s tests -v
-# 56 tests OK
+# 59 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
@@ -405,3 +405,21 @@ python -m memblocks.cli serve --port 8765
 - `integrations/dsh/memblocks-client.mjs`：零依赖 Node 客户端
 
 接口默认只监听 `127.0.0.1`，不对外暴露。
+
+## 恒星：永远不会遗忘的记忆
+
+`permanent` 标记的记忆在星图里是**金色恒星**，固定在最中心，不随模拟时间变暗：
+
+```bash
+python -m memblocks.cli stable add "用户是律师，在邹城执业" --permanent
+python -m memblocks.cli stable pin   --id st-xxxx     # 把已有记忆设为恒星
+python -m memblocks.cli stable unpin --id st-xxxx     # 取消
+```
+
+规则：
+
+- 权重和亮度永远 100%，不参与遗忘
+- **稳定区写满 100 条时不会被淘汰**
+- 星图上是带十字星芒的金色星，位于星系中心
+
+适合：身份、人设、长期约定这类"忘了就出大事"的事。
