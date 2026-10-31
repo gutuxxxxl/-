@@ -124,7 +124,8 @@ class Store:
         return t
 
     # ---------- 稳定区 ----------
-    def stable_add(self, text, tags=None, weight=1.0, protected=False, permanent=False):
+    def stable_add(self, text, tags=None, weight=1.0, protected=False, permanent=False,
+                   display_only=False):
         text = self._check(text, 200, "稳定记忆")
         with self._locked():
             data = _load(self.stable, [])
@@ -142,6 +143,7 @@ class Store:
                 "weight": float(weight),
                 "protected": bool(protected),
                 "permanent": bool(permanent),
+                "display_only": bool(display_only),
                 "at": time.strftime("%Y-%m-%d %H:%M"),
                 "last_hit": time.strftime("%Y-%m-%d %H:%M"),
             }
@@ -149,7 +151,8 @@ class Store:
             evicted = []
             # 写满后按权重淘汰最老的（同权重先淘汰老的）
             while len(data) > STABLE_CAP:
-                pool = [x for x in data if not x.get("protected") and not x.get("permanent")] or data
+                pool = [x for x in data if not x.get("protected") and not x.get("permanent")
+                        and not x.get("display_only")] or data
                 victim = min(pool, key=lambda x: (float(x.get("weight", 1.0)), x.get("at", "")))
                 data.remove(victim)
                 evicted.append(victim)
@@ -164,6 +167,17 @@ class Store:
             for x in data:
                 if x.get("id") == sid:
                     x["permanent"] = bool(on)
+                    _save(self.stable, data)
+                    return x
+        return None
+
+    def stable_display_only(self, sid, on=True):
+        """把记忆设为"仅展示"：进星图，但不注入上下文。"""
+        with self._locked():
+            data = _load(self.stable, [])
+            for x in data:
+                if x.get("id") == sid:
+                    x["display_only"] = bool(on)
                     _save(self.stable, data)
                     return x
         return None
@@ -280,7 +294,8 @@ class Store:
 
     def inject(self, query="", max_tokens=800):
         budget = max(120, int(max_tokens)) * 2
-        stable = sorted(self.stable_list(), key=lambda x: -float(x.get("weight", 1.0)))
+        stable = sorted([x for x in self.stable_list() if not x.get("display_only")],
+                        key=lambda x: -float(x.get("weight", 1.0)))
         todos = self.todo_list()
         hits = []
         if query:
