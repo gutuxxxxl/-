@@ -111,6 +111,19 @@ class TestRobust(Base):
         self.assertTrue((snap / "archive.jsonl").exists())
 
 
+class TestStar(Base):
+    def test_render_html(self):
+        from memblocks.star import render
+        self.st.stable_add("用户是律师，在邹城执业", weight=2.0)
+        self.st.todo_add("检查注入效果", "2026-11-07")
+        self.st.block_add("讨论分层记忆：稳定区、待办、归档", ["记忆"])
+        out = Path(self.tmp.name) / "map.html"
+        render(self.st, out)
+        html = out.read_text(encoding="utf-8")
+        self.assertIn("记忆星图", html)
+        self.assertIn("用户是律师", html)
+
+
 class TestTime(unittest.TestCase):
     def test_cases(self):
         r = date(2026, 10, 31)
