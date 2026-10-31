@@ -73,6 +73,20 @@ class TestFirstRunEdge(unittest.TestCase):
         r = run_cli(self.root, "star", "--out", str(self.root / "m.html"))
         self.assertIn("config --star on", r.stdout)
 
+    # 6b. DSH 标记与命令
+    def test_dsh_flag_and_command(self):
+        r = run_cli(self.root, "init", "--dsh")
+        cfg = json.loads((self.root / "config.json").read_text(encoding="utf-8"))
+        self.assertTrue(cfg["dsh_enabled"])
+        self.assertIn("DSH", r.stdout)
+        r2 = run_cli(self.root, "dsh", "--json")
+        data = json.loads(r2.stdout)
+        self.assertTrue(data["enabled"])
+        self.assertIn("inject", data["inject_cmd"])
+        run_cli(self.root, "config", "--dsh", "off")
+        r3 = run_cli(self.root, "dsh", "--json")
+        self.assertFalse(json.loads(r3.stdout)["enabled"])
+
     # 7. init 可重复执行，不重复打印横幅
     def test_init_idempotent_banner(self):
         run_cli(self.root, "init", "--star")
