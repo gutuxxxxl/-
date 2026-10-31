@@ -112,7 +112,7 @@ TEMPLATE = r"""<!doctype html>
   <div class="l"><span class="d" style="background:#ffc861"></span>待办</div>
   <div class="l"><span class="d" style="background:#b98cff"></span>归档</div>
   <div class="l"><span class="d" style="background:#ffd76a;box-shadow:0 0 8px #ffd76a"></span>恒星（永不遗忘）</div>
-  <div class="note">悬停看详情 · 滚轮缩放 · 拖拽旋转<br>点星星 = 提到它，会重新变亮</div>
+  <div class="note">悬停看详情 · 滚轮缩放 · 拖拽旋转<br>单击选中 · 双击 = 提到它（真实加权）</div>
 </div>
 
 <div id="detail" class="glass">
@@ -138,6 +138,14 @@ TEMPLATE = r"""<!doctype html>
 </div>
 
 <div id="tip"></div>
+<div id="toast"></div>
+<style>
+#toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);padding:10px 16px;
+  background:rgba(12,26,44,.95);border:1px solid rgba(90,160,230,.45);border-radius:10px;
+  font-size:13px;color:#cfe6ff;opacity:0;transition:.25s;pointer-events:none;
+  box-shadow:0 12px 30px rgba(0,0,0,.5);z-index:9}
+#toast.on{opacity:1}
+</style>
 <script>
 const DATA = __DATA__;
 const cv = document.getElementById('c'), ctx = cv.getContext('2d');
@@ -389,7 +397,8 @@ function buildList(){
     div.onmouseenter=()=>{tip.style.display='block';tip.innerHTML='<b style="color:'+n.color+'">'+
       n.label+'</b><br><span style="color:#6f88a8">点一下 = 提到它</span>';};
     div.onmouseleave=()=>{tip.style.display='none';};
-    div.onclick=()=>{selectNode(n);n.weight=Math.min(9,n.weight+.6);n.lastMs=now0;n.flash=1;};
+    div.onclick=()=>selectNode(n);
+    div.ondblclick=()=>hitNode(n);
     box.appendChild(div);
   }
 }
@@ -428,10 +437,36 @@ cv.addEventListener('mousemove',e=>{
       '<br><span style="color:#6f88a8">点一下 = 提到它</span>';}
   else tip.style.display='none';
 });
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('on');
+  clearTimeout(toast._t); toast._t=setTimeout(()=>t.classList.remove('on'),1800);
+}
+async function hitNode(n){
+  if(n.kind !== '稳定'){ toast('待办不计权重，只有稳定记忆会被复习'); return; }
+  if(location.protocol === 'file:'){
+    toast('本地文件模式：只做演示，不写回'); n.flash=1; return;
+  }
+  try{
+    const r = await fetch('/api/memory/hit', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({id: n.id})});
+    const d = await r.json();
+    if(d && d.ok){
+      n.weight = d.item ? d.item.weight : Math.min(9, n.weight + .2);
+      n.lastMs = Date.now(); n.flash = 1;
+      toast('已记录：' + n.label.slice(0,14) + ' · 权重 ' + n.weight.toFixed(1));
+    }else{
+      toast('写入失败：' + ((d && d.error) || '未知错误'));
+    }
+  }catch(e){ toast('写入失败：' + e.message); }
+}
 cv.addEventListener('click',e=>{
   for(const n of N){const p=project(n);
-    if(Math.hypot(p.x-e.clientX,p.y-e.clientY)<16){
-      selectNode(n);n.weight=Math.min(9,n.weight+.6);n.lastMs=now0;n.flash=1;break;}}
+    if(Math.hypot(p.x-e.clientX,p.y-e.clientY)<16){ selectNode(n); break; }}
+});
+cv.addEventListener('dblclick',e=>{
+  for(const n of N){const p=project(n);
+    if(Math.hypot(p.x-e.clientX,p.y-e.clientY)<16){ hitNode(n); break; }}
 });
 cv.addEventListener('wheel',e=>{zoom*=e.deltaY>0?.92:1.08;zoom=Math.max(.5,Math.min(3.4,zoom));},{passive:true});
 cv.addEventListener('mousedown',e=>{drag=true;last={x:e.clientX,y:e.clientY};});
