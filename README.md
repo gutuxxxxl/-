@@ -90,7 +90,7 @@ store.restore("memories/snapshots/snap-20261031-060000-ab12")
 
 ```bash
 python -m unittest discover -s tests -v
-# 39 tests OK
+# 48 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
@@ -271,3 +271,15 @@ python -m memblocks.cli star --out memory-map.html
 - 也可以直接用参数：`init --star` / `init --no-star`
 - 之后随时改：`config --star on|off`，`config --show` 看当前配置
 - 选择记在 `config.json`，只问一次
+
+### 引导的边界（都测过）
+
+| 场景 | 行为 |
+| --- | --- |
+| 全新安装 | 询问一次 |
+| 已有记忆的老用户升级 | **不再询问**，自动视为已启用过 |
+| 非交互 / 脚本 | 不卡住，默认关闭并提示 |
+| `--star` 与 `--no-star` 同时给 | 后者生效 |
+| 配置文件损坏 | 报错退出（退出码 2），不静默重建 |
+| 星图关闭时运行 star | 照常生成，但提示 `config --star on` |
+| 重复 init | 不再打印横幅 |
