@@ -155,6 +155,21 @@ class TestPermanent(Base):
         self.assertFalse(flags["普通记忆"])
 
 
+class TestDisplayOnly(Base):
+    def test_inject_excludes_display_only(self):
+        self.st.stable_add("要注入的事实")
+        self.st.stable_add("只给人看的人设摘要", tags=["人设"], permanent=True, display_only=True)
+        out = self.st.inject("测试")
+        self.assertIn("要注入的事实", out)
+        self.assertNotIn("只给人看的人设摘要", out)
+
+    def test_star_includes_display_only(self):
+        from memblocks.star import build
+        self.st.stable_add("只给人看的人设摘要", display_only=True)
+        nodes = build(self.st)["nodes"]
+        self.assertTrue(any("人设摘要" in n["label"] for n in nodes))
+
+
 class TestStar(Base):
     def test_render_html(self):
         from memblocks.star import render
