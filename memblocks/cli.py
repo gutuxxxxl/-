@@ -9,7 +9,7 @@ from .janitor import Janitor
 def main():
     try:
         return _main()
-    except ValueError as e:
+    except (ValueError, RuntimeError) as e:
         print(json.dumps({"error": str(e)}, ensure_ascii=False))
         raise SystemExit(2)
 
@@ -111,6 +111,8 @@ def _main():
         print(json.dumps(cfgd, ensure_ascii=False, indent=2))
     elif args.cmd == "star":
         from .star import render
+        if not st.config_get().get("star_enabled"):
+            print("提示：星图未启用，现在是临时生成；要长期用请先 config --star on")
         print(render(st, args.out))
     elif args.cmd == "inject":
         print(st.inject(args.query, args.max_tokens))
