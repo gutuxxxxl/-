@@ -81,5 +81,20 @@ class TestFirstRunEdge(unittest.TestCase):
         self.assertIn("star_enabled", r.stdout)
 
 
+class TestUnwritable(unittest.TestCase):
+    def test_parent_is_file(self):
+        tmp = tempfile.TemporaryDirectory()
+        base = Path(tmp.name)
+        (base / "blocker").write_text("x", encoding="utf-8")
+        r = run_cli(base / "blocker" / "data", "init")
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("无法创建数据目录", r.stdout)
+
+    def test_missing_disk_like_root(self):
+        # 盘符不存在
+        r = run_cli(r"Z:\no-such-drive\memblocks", "init")
+        self.assertEqual(r.returncode, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
