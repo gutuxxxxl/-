@@ -39,11 +39,12 @@ def _main():
     d.add_argument("--json", action="store_true", help="输出机器可读的集成信息")
 
     s = sub.add_parser("stable")
-    s.add_argument("action", choices=["add", "list", "hit", "pin", "unpin"])
+    s.add_argument("action", choices=["add", "list", "hit", "pin", "unpin", "display"])
     s.add_argument("text", nargs="?")
     s.add_argument("--tags", default="")
     s.add_argument("--weight", type=float, default=1.0)
     s.add_argument("--permanent", action="store_true", help="设为恒星：永不遗忘")
+    s.add_argument("--display-only", action="store_true", help="仅星图展示，不注入上下文")
     s.add_argument("--id", default="")
 
     t = sub.add_parser("todo")
@@ -109,7 +110,8 @@ def _main():
                           "dsh_enabled": bool(st.config_get().get("dsh_enabled"))}, ensure_ascii=False))
     elif args.cmd == "stable":
         if args.action == "add":
-            r = st.stable_add(args.text, tags(args.tags), args.weight, permanent=args.permanent)
+            r = st.stable_add(args.text, tags(args.tags), args.weight,
+                              permanent=args.permanent, display_only=args.display_only)
             print(json.dumps({"item": r["item"], "merged": r.get("merged", False),
                               "evicted": [x["text"] for x in r.get("evicted", [])],
                               "count": r.get("count")}, ensure_ascii=False, indent=2))
@@ -117,6 +119,8 @@ def _main():
             print(json.dumps(st.stable_hit(args.id), ensure_ascii=False, indent=2))
         elif args.action in ("pin", "unpin"):
             print(json.dumps(st.stable_pin(args.id, args.action == "pin"), ensure_ascii=False, indent=2))
+        elif args.action == "display":
+            print(json.dumps(st.stable_display_only(args.id, True), ensure_ascii=False, indent=2))
         else:
             print(json.dumps(st.stable_list(), ensure_ascii=False, indent=2))
     elif args.cmd == "todo":
