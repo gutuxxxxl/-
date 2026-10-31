@@ -18,7 +18,14 @@ def _main():
     ap = argparse.ArgumentParser(prog="memlite", description="三层记忆（稳定/待办/归档）")
     ap.add_argument("--root", default=str(Path.home() / ".memlite"))
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("init")
+    ini = sub.add_parser("init")
+    ini.add_argument("--star", dest="star", action="store_true", default=None,
+                     help="首次安装时直接启用记忆星图")
+    ini.add_argument("--no-star", dest="star", action="store_false", default=None)
+
+    cfg = sub.add_parser("config")
+    cfg.add_argument("--star", choices=["on", "off"])
+    cfg.add_argument("--show", action="store_true")
 
     s = sub.add_parser("stable")
     s.add_argument("action", choices=["add", "list", "hit"])
@@ -50,13 +57,31 @@ def _main():
 
     args = ap.parse_args()
     st = Store(args.root)
-    st.init()
+    init_info = st.init()
 
     def tags(v):
         return [x.strip() for x in v.split(",") if x.strip()]
 
     if args.cmd == "init":
-        print(json.dumps({"root": str(st.root), "cap": STABLE_CAP}, ensure_ascii=False))
+        import sys
+        info = init_info
+        if info["first_run"]:
+            print("\n=== memblocks 首次安装 ===")
+            print("三层记忆已就绪：稳定区 / 待办 / 归档")
+            print("\n另外它还有一个「记忆星图」：把记忆画成会变暗的星，")
+            print("点一下就重新变亮，用来直观看到哪些事快被忘记了。")
+            choice = getattr(args, "star", None)
+            if choice is None:
+                if sys.stdin.isatty():
+                    ans = input("\n是否启用记忆星图？[y/N] ").strip().lower()
+                    choice = ans in ("y", "yes", "是", "1")
+                else:
+                    choice = False
+                    print("\n（非交互环境，默认不启用；之后可用 init --star 或 config --star on）")
+            st.config_set(star_enabled=bool(choice), first_run=False)
+            print("\n星图：" + ("已启用，运行 python -m memblocks.cli star --out memory-map.html" if choice else "未启用，可用 config --star on 开启"))
+        print(json.dumps({"root": str(st.root), "cap": STABLE_CAP,
+                          "star_enabled": bool(st.config_get().get("star_enabled"))}, ensure_ascii=False))
     elif args.cmd == "stable":
         if args.action == "add":
             r = st.stable_add(args.text, tags(args.tags), args.weight)
@@ -79,6 +104,11 @@ def _main():
             print(json.dumps(st.block_add(args.summary, tags(args.tags)), ensure_ascii=False, indent=2))
         else:
             print(json.dumps(st.block_list(), ensure_ascii=False, indent=2))
+    elif args.cmd == "config":
+        if args.star:
+            st.config_set(star_enabled=(args.star == "on"))
+        cfgd = st.config_get()
+        print(json.dumps(cfgd, ensure_ascii=False, indent=2))
     elif args.cmd == "star":
         from .star import render
         print(render(st, args.out))
