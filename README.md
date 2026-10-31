@@ -90,7 +90,7 @@ store.restore("memories/snapshots/snap-20261031-060000-ab12")
 
 ```bash
 python -m unittest discover -s tests -v
-# 59 tests OK
+# 61 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
@@ -423,3 +423,22 @@ python -m memblocks.cli stable unpin --id st-xxxx     # 取消
 - 星图上是带十字星芒的金色星，位于星系中心
 
 适合：身份、人设、长期约定这类"忘了就出大事"的事。
+
+## 仅展示（display_only）
+
+有些记忆只想在星图里看，不想进上下文——比如人设摘要：
+
+```bash
+python -m memblocks.cli stable add "人设摘要…" --permanent --display-only
+python -m memblocks.cli stable display --id st-xxxx    # 已有记忆改成仅展示
+```
+
+行为：
+
+| 场景 | 是否出现 |
+| --- | --- |
+| 星图 | ✅ 显示（金色恒星） |
+| `inject` 注入上下文 | ❌ 不出现 |
+| 上限淘汰 | ❌ 不参与 |
+
+适合"我只想让它作为可视化参考，不想让它影响真实对话"的内容。
