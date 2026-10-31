@@ -90,7 +90,7 @@ store.restore("memories/snapshots/snap-20261031-060000-ab12")
 
 ```bash
 python -m unittest discover -s tests -v
-# 48 tests OK
+# 50 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
@@ -283,3 +283,13 @@ python -m memblocks.cli star --out memory-map.html
 | 配置文件损坏 | 报错退出（退出码 2），不静默重建 |
 | 星图关闭时运行 star | 照常生成，但提示 `config --star on` |
 | 重复 init | 不再打印横幅 |
+
+### 目录不可写时
+
+`init` 会明确报错并退出（退出码 2），不会留下半个配置文件：
+
+```json
+{"error": "无法创建数据目录 ...：拒绝访问。请换一个有写权限的路径（--root）"}
+```
+
+已测：父路径是文件、目录 ACL 拒绝写入、盘符不存在。
