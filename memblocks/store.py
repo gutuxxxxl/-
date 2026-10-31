@@ -51,14 +51,20 @@ class Store:
 
     # ---------- 基础 ----------
     def init(self):
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.blocks.mkdir(exist_ok=True)
-        self.snapshots.mkdir(exist_ok=True)
+        try:
+            self.root.mkdir(parents=True, exist_ok=True)
+            self.blocks.mkdir(exist_ok=True)
+            self.snapshots.mkdir(exist_ok=True)
+        except OSError as e:
+            raise RuntimeError(f"无法创建数据目录 {self.root}：{e.strerror or e}。请换一个有写权限的路径（--root）")
         for p, d in ((self.stable, []), (self.todo, [])):
             if not p.exists():
                 _save(p, d)
-        if not self.archive.exists():
-            self.archive.write_text("", encoding="utf-8")
+        try:
+            if not self.archive.exists():
+                self.archive.write_text("", encoding="utf-8")
+        except OSError as e:
+            raise RuntimeError(f"无法写入 {self.root}：{e.strerror or e}。请检查目录权限")
         cfg = self.config_get()
         has_data = bool(_load(self.stable, [])) or bool(_load(self.todo, [])) or any(self.blocks.glob("*.json"))
         first_run = ("first_run" not in cfg) and not has_data
