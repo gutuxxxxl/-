@@ -31,6 +31,10 @@ def _main():
     cfg.add_argument("--dsh", choices=["on", "off"])
     cfg.add_argument("--show", action="store_true")
 
+    sv = sub.add_parser("serve")
+    sv.add_argument("--port", type=int, default=8765)
+    sv.add_argument("--host", default="127.0.0.1")
+
     d = sub.add_parser("dsh")
     d.add_argument("--json", action="store_true", help="输出机器可读的集成信息")
 
@@ -131,6 +135,14 @@ def _main():
             st.config_set(dsh_enabled=(args.dsh == "on"))
         cfgd = st.config_get()
         print(json.dumps(cfgd, ensure_ascii=False, indent=2))
+    elif args.cmd == "serve":
+        from .serve import serve
+        httpd = serve(st.root, args.port, args.host)
+        print(f"memblocks HTTP 接口: http://{args.host}:{args.port}  (root={st.root})")
+        try:
+            httpd.serve_forever()
+        except KeyboardInterrupt:
+            pass
     elif args.cmd == "dsh":
         info = {
             "enabled": bool(st.config_get().get("dsh_enabled")),
