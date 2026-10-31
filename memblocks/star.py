@@ -111,6 +111,7 @@ TEMPLATE = r"""<!doctype html>
   <div class="l"><span class="d" style="background:#59e0ff"></span>稳定区</div>
   <div class="l"><span class="d" style="background:#ffc861"></span>待办</div>
   <div class="l"><span class="d" style="background:#b98cff"></span>归档</div>
+  <div class="l"><span class="d" style="background:#ffd76a;box-shadow:0 0 8px #ffd76a"></span>恒星（永不遗忘）</div>
   <div class="note">悬停看详情 · 滚轮缩放 · 拖拽旋转<br>点星星 = 提到它，会重新变亮</div>
 </div>
 
@@ -169,6 +170,7 @@ N.forEach((n,i)=>{
   n.flash = 0;
   n.lastMs = n.last ? Date.parse(n.last.replace(' ','T')) : now0;
   if (isNaN(n.lastMs)) n.lastMs = now0;
+  if (n.permanent) { n.r0 = 52; n.theta = Math.random()*6.283; n.omega = .02; }
 });
 
 const DUST_COUNT = Math.min(900, 180 + N.length*30);
@@ -184,6 +186,7 @@ let hover=null, selected=null;
 const show={稳定:true,待办:true,归档:true};
 
 function retention(n){
+  if (n.permanent) return 1;                 // 恒星：永不遗忘
   const ageDays=(now0-n.lastMs)/DAY+simDays;
   const tau=7+12*Math.max(.2,n.weight);
   return Math.exp(-Math.max(0,ageDays)/tau);
@@ -271,15 +274,26 @@ function draw(){
   const pts=vis.map(n=>({n,...project(n)})).sort((a,b)=>a.z-b.z);
   for(const it of pts){
     const n=it.n,r=retention(n);
-    const rad=(2.2+Math.min(9,n.weight)*(.45+.75*r))*it.p*(1+.35*n.flash);
-    const alpha=.10+.90*r;
+    const col = n.permanent ? '#ffd76a' : n.color;
+    let rad=(2.2+Math.min(9,n.weight)*(.45+.75*r))*it.p*(1+.35*n.flash);
+    if(n.permanent) rad *= 1.7;
+    const alpha=n.permanent?1:(.10+.90*r);
     if(r>.18){
-      const g=ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*4.2);
-      g.addColorStop(0,hexA(n.color,.95*alpha));g.addColorStop(.35,hexA(n.color,.34*alpha));
-      g.addColorStop(1,hexA(n.color,0));
-      ctx.fillStyle=g;ctx.beginPath();ctx.arc(it.x,it.y,rad*4.2,0,7);ctx.fill();
+      const g=ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*4.6);
+      g.addColorStop(0,hexA(col,.95*alpha));g.addColorStop(.35,hexA(col,.36*alpha));
+      g.addColorStop(1,hexA(col,0));
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(it.x,it.y,rad*4.6,0,7);ctx.fill();
     }
-    ctx.fillStyle=hexA(n.color,Math.max(.12,alpha));
+    if(n.permanent){                         // 十字星芒
+      const L=rad*5.2;
+      for(const [dx,dy] of [[1,0],[-1,0],[0,1],[0,-1]]){
+        const gg=ctx.createLinearGradient(it.x,it.y,it.x+dx*L,it.y+dy*L);
+        gg.addColorStop(0,'rgba(255,235,170,.55)');gg.addColorStop(1,'rgba(255,215,106,0)');
+        ctx.strokeStyle=gg;ctx.lineWidth=1.6;
+        ctx.beginPath();ctx.moveTo(it.x,it.y);ctx.lineTo(it.x+dx*L,it.y+dy*L);ctx.stroke();
+      }
+    }
+    ctx.fillStyle=hexA(col,Math.max(.12,alpha));
     ctx.beginPath();ctx.arc(it.x,it.y,Math.max(1,rad),0,7);ctx.fill();
     if(r<.25){ctx.strokeStyle='rgba(120,140,170,.32)';ctx.lineWidth=.8;
       ctx.beginPath();ctx.arc(it.x,it.y,Math.max(2,rad+3),0,7);ctx.stroke();}
@@ -308,7 +322,7 @@ function buildList(){
   for(const {n,r} of rows){
     const div=document.createElement('div');div.className='item';
     div.innerHTML='<div class="t">'+n.label+'</div>'+
-      '<div class="m"><span>'+n.kind+'</span><span class="bar"><i style="width:'+
+      '<div class="m"><span>'+(n.permanent?'恒星':n.kind)+'</span><span class="bar"><i style="width:'+
       Math.round(r*100)+'%;background:'+n.color+'"></i></span><span>'+
       Math.round(r*100)+'%</span></div>';
     div.onmouseenter=()=>{tip.style.display='block';tip.innerHTML='<b style="color:'+n.color+'">'+
@@ -389,6 +403,7 @@ def build(store):
             "id": "s-" + x["id"], "kind": "稳定", "color": "#59e0ff",
             "label": x["text"][:24], "text": x["text"],
             "weight": float(x.get("weight", 1.0)),
+            "permanent": bool(x.get("permanent")),
             "last": x.get("last_hit") or x.get("at", ""),
             "_g": _grams(x["text"]),
         })
