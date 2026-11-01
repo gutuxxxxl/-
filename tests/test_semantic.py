@@ -81,6 +81,24 @@ class TestDistill(unittest.TestCase):
         self.assertEqual(len(self.st.stable_list()), 1)
         self.assertTrue(r["merged"] or len(r["added"]) == 0)
 
+    def test_todo_keeps_due(self):
+        for t in ["我明天做可乐鸡翅", "x", "y"]:
+            capture(self.st, t)
+        client = FakeClient([{"text": "做可乐鸡翅", "kind": "待办", "due": "明天",
+                              "importance": 3, "confidence": 0.9}])
+        distill(self.st, client=client)
+        todo = self.st.todo_list()[0]
+        from datetime import date, timedelta
+        self.assertEqual(todo["due"], (date.today() + timedelta(days=1)).isoformat())
+
+    def test_short_task_without_due(self):
+        for t in ["去做可乐鸡翅", "x", "y"]:
+            capture(self.st, t)
+        client = FakeClient([{"text": "做可乐鸡翅", "kind": "待办", "due": "",
+                              "importance": 2, "confidence": 0.6}])
+        distill(self.st, client=client)
+        self.assertEqual(len(self.st.todo_list()), 1)
+
     def test_usage_logged(self):
         for t in ["a", "b", "c"]:
             capture(self.st, t)
