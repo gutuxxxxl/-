@@ -73,6 +73,14 @@ class Janitor:
         r["purged"] = len(drop)
         r["todos_decayed"] = faded
 
+        # 3) 近期事件：超过 ttl 就清掉
+        gone = self.s.event_purge()
+        r["events_purged"] = len(gone)
+        if gone and not self.dry_run:
+            with open(self.s.archive, "a", encoding="utf-8") as f:
+                for ev in gone:
+                    f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+
         if (changed or drop or faded) and not self.dry_run:
             if drop:
                 with open(self.s.archive, "a", encoding="utf-8") as f:
