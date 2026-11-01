@@ -227,6 +227,10 @@ class TestTime(unittest.TestCase):
         self.assertEqual(normalize("三个月前", r), "2026-07-31")
         self.assertEqual(normalize("一个月后", r), "2026-11-30")
         self.assertEqual(normalize("乱写", r), "")
+        self.assertEqual(normalize("周末", r), "2026-10-31")  # ref 是周六
+        self.assertEqual(normalize("晚上", r), "2026-10-31")
+        self.assertEqual(normalize("明天晚上", r), "2026-11-01")
+        self.assertEqual(normalize("一会", r), "2026-10-31")
         self.assertEqual(normalize("十二月二十八号", r), "2026-12-28")
         self.assertEqual(normalize("十月二十日", r), "2026-10-20")
 
