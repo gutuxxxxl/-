@@ -16,6 +16,7 @@ import json
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from .store import Store
+from pathlib import Path
 
 
 def make_handler(store: Store):
@@ -54,7 +55,7 @@ def make_handler(store: Store):
                 return self._json({"ok": True, "root": str(store.root)})
             if path == "/memories":
                 return self._json({"stable": store.stable_list(), "todos": store.todo_list()})
-            if path == "/star":
+            if path == "/star" or path == "/memory-map":
                 from .star import render
                 import tempfile
                 tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False)
@@ -83,6 +84,24 @@ def make_handler(store: Store):
                     return self._json(store.block_add(body.get("summary", ""), body.get("tags") or []))
                 if path == "/review":
                     return self._json({"boosted": store.review(body.get("query", ""))})
+                if path == "/api/memory/hit":
+                    sid = str(body.get("id", ""))
+                    for pre in ("s-", "t-", "b-", "e-"):
+                        if sid.startswith(pre):
+                            sid = sid[len(pre):]
+                            break
+                    item = store.stable_hit(sid) if sid else None
+                    return self._json({"ok": bool(item), "item": item})
+                if path == "/api/memory/dedupe":
+                    from .dedupe import dedupe_store
+                    from .star import render
+                    r = dedupe_store(store)
+                    try:
+                        render(store, str(Path(store.root) / "star.html"))
+                    except Exception:
+                        pass
+                    r["ok"] = True
+                    return self._json(r)
             except (ValueError, RuntimeError) as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"error": "not found"}, 404)
