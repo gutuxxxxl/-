@@ -527,6 +527,13 @@ def build(store):
             "text": t["text"] + (f"（截止 {t['due']}）" if t.get("due") else ""),
             "weight": 1.2, "last": t.get("at", ""), "_g": _grams(t["text"]),
         })
+    for ev in getattr(store, "event_list", lambda: [])():
+        nodes.append({
+            "id": "e-" + ev.get("id", ""), "kind": "事件", "color": "#6ef3b0",
+            "label": ev.get("text", "")[:24], "text": ev.get("text", "") + "（三天内）",
+            "weight": 1.0, "last": ev.get("at", ""), "_g": _grams(ev.get("text", "")),
+        })
+
     for b in store.block_list():
         nodes.append({
             "id": "b-" + b["id"], "kind": "归档", "color": "#b98cff",
