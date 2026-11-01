@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from datetime import date, timedelta
@@ -153,6 +154,40 @@ class TestPermanent(Base):
         flags = {n["label"]: n["permanent"] for n in nodes}
         self.assertTrue(flags["恒星记忆"])
         self.assertFalse(flags["普通记忆"])
+
+
+class TestStaleTodo(Base):
+    def test_old_todo_fades_by_weight(self):
+        self.st.todo_add("没写时间的旧待办")
+        data = json.loads(self.st.todo.read_text(encoding="utf-8"))
+        from datetime import date, timedelta
+        data[0]["last_decay"] = (date.today() - timedelta(days=20)).isoformat()
+        self.st.todo.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        rep = Janitor(self.st, dry_run=False).run()
+        self.assertEqual(len(self.st.todo_list(True)), 0)
+        self.assertEqual(rep["purged"], 1)
+
+    def test_recent_todo_fades_but_kept(self):
+        self.st.todo_add("五天前的待办")
+        data = json.loads(self.st.todo.read_text(encoding="utf-8"))
+        from datetime import date, timedelta
+        data[0]["last_decay"] = (date.today() - timedelta(days=5)).isoformat()
+        self.st.todo.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+        Janitor(self.st, dry_run=False).run()
+        items = self.st.todo_list()
+        self.assertEqual(len(items), 1)
+        self.assertLess(items[0]["weight"], 1.0)
+
+    def test_repeat_mention_boosts(self):
+        t1 = self.st.todo_add("做可乐鸡翅")
+        t2 = self.st.todo_add("做可乐鸡翅")
+        self.assertEqual(t1["id"], t2["id"])
+        self.assertGreater(t2["weight"], 1.0)
+
+    def test_fresh_todo_kept(self):
+        self.st.todo_add("今天的待办")
+        Janitor(self.st, dry_run=False).run()
+        self.assertEqual(len(self.st.todo_list()), 1)
 
 
 class TestDisplayOnly(Base):
