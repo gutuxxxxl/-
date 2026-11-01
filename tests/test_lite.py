@@ -216,6 +216,21 @@ class TestEvents(Base):
         self.assertTrue(any(n["kind"] == "事件" for n in nodes))
 
 
+class TestFuzzyMerge(Base):
+    def test_similar_texts_merge(self):
+        self.st.stable_add("用户是一名执业律师，常驻邹城", ["身份"])
+        self.st.stable_add("用户是一名执业律师，常驻邹城多年", ["身份"])
+        rep = Janitor(self.st, dry_run=False).run()
+        self.assertEqual(len(self.st.stable_list()), 1)
+        self.assertGreaterEqual(rep["stable_fuzzy_merged"], 1)
+
+    def test_protected_not_merged(self):
+        self.st.stable_add("人设：只叫小鲸", ["人设"], protected=True)
+        self.st.stable_add("人设：只叫小鲸鱼", ["人设"], protected=True)
+        Janitor(self.st, dry_run=False).run()
+        self.assertEqual(len(self.st.stable_list()), 2)
+
+
 class TestDisplayOnly(Base):
     def test_inject_excludes_display_only(self):
         self.st.stable_add("要注入的事实")
