@@ -109,6 +109,14 @@ class TestDistill(unittest.TestCase):
         self.assertEqual(len(items), 1)
         self.assertEqual(items[0]["tags"], ["经历"])
 
+    def test_recent_event_goes_to_event_layer(self):
+        for t in ["刚吃完火锅", "x", "y"]:
+            capture(self.st, t)
+        client = FakeClient([{"text": "刚吃完火锅", "kind": "事件", "importance": 2, "confidence": 0.8}])
+        distill(self.st, client=client)
+        self.assertEqual([e["text"] for e in self.st.event_list()], ["刚吃完火锅"])
+        self.assertEqual(len(self.st.stable_list()), 0)
+
     def test_usage_logged(self):
         for t in ["a", "b", "c"]:
             capture(self.st, t)
