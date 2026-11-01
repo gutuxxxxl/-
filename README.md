@@ -90,7 +90,7 @@ store.restore("memories/snapshots/snap-20261031-060000-ab12")
 
 ```bash
 python -m unittest discover -s tests -v
-# 66 tests OK
+# 74 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
@@ -554,3 +554,43 @@ python -m memblocks.cli stable display --id st-xxxx    # 已有记忆改成仅�
 | 面板缓存 | 加权后自动失效，立刻能读到新值 |
 
 ID 只允许 `A-Za-z0-9_-`、长度 ≤64，防止拼进 SSH 命令时被注入。
+
+## 语义抽取：不再靠关键词
+
+以前靠关键词匹配（我 / 喜欢 / 生日 / 记住）＋字数门槛，短句会被漏掉，
+比如「去弄鸡翅」四个字，既不命中关键词也不够长。
+
+现在改成三步：
+
+```
+1. 缓存：每条消息先写进 buffer.jsonl
+2. 抽取：攒够 N 条（默认 5）交给模型，让它输出 JSON 事实
+3. 合并：按 importance/confidence 打分入库，重复的合并加权
+```
+
+```bash
+# 配置模型（只配一次）
+python -m memblocks.cli config --llm-key sk-xxx --llm-model deepseek-chat --distill-min 5
+
+# 手动喂一句话 / 手动抽一次
+python -m memblocks.cli capture --text "他晚上要做鸡翅"
+python -m memblocks.cli distill
+```
+
+抽出来的事实：
+
+```json
+{"text": "晚上要做鸡翅", "kind": "待办", "importance": 3, "confidence": 0.9}
+```
+
+权重 = `0.6 + 0.3×importance + 0.2×confidence`，重复事实不新增，只加权重。
+
+### 成本
+
+- 每批（5 条消息）约 100~200 token
+- 一批只调用一次模型，均摊到每条消息很少
+- 也可以换成更便宜的小模型做抽取，配置 `--llm-model` 即可
+
+### 开关
+
+`enable_semantic`（适配层里）控制是否自动抽取；关掉就只做注入。
