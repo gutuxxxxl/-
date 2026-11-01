@@ -112,7 +112,7 @@ TEMPLATE = r"""<!doctype html>
   <div class="l"><span class="d" style="background:#ffc861"></span>待办</div>
   <div class="l"><span class="d" style="background:#b98cff"></span>归档</div>
   <div class="l"><span class="d" style="background:#ffd76a;box-shadow:0 0 8px #ffd76a"></span>恒星（永不遗忘）</div>
-  <div class="note">悬停看详情 · 滚轮缩放 · 拖拽旋转<br>单击选中 · 双击 = 提到它（真实加权）</div>
+  <div class="note">悬停看详情 · 滚轮缩放 · 拖拽 360° 旋转<br>单击选中 · 双击 = 提到它（真实加权）</div>
 </div>
 
 <div id="detail" class="glass">
@@ -122,7 +122,13 @@ TEMPLATE = r"""<!doctype html>
   <div class="meta">
     <span>权重 <b id="d-weight">—</b></span>
     <span>保持 <b id="d-ret">—</b></span>
+    <span>关联 <b id="d-links">—</b></span>
     <span>最后想起 <b id="d-last">—</b></span>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:11px;padding-top:11px;border-top:1px solid rgba(80,130,190,.16)">
+    <button id="focusOn" style="flex:1">只看它的星系</button>
+    <button id="focusHop" title="关联层数">1 跳</button>
+    <button id="focusOff" title="返回全景">全景</button>
   </div>
 </div>
 
@@ -133,6 +139,7 @@ TEMPLATE = r"""<!doctype html>
   <span id="spd">0.3 天/秒</span>
   <button id="review">复习全部</button>
   <button id="reset">重置视角</button>
+  <button id="dedupe" title="合并稳定区里说法相近的记忆">去重</button>
   <button id="orbits">轨道：开</button>
   <span id="day">已过 0.0 天</span>
 </div>
@@ -172,14 +179,25 @@ N.forEach((n,i)=>{
   n.r0 = r0;
   n.theta = arm*(Math.PI*2/ARMS) + t*2.6 + (Math.random()-.5)*.25;
   n.ecc = .05 + Math.random()*.16;                 // 轨道离心率
-  n.incl = (k==='稳定'? -.22 : k==='待办'? .16 : .46); // 轨道倾角，制造 3D 层次
+  // 2026-11-02：每条轨道随机一个三维平面，星系不再是一张扁盘
+  const phi = Math.random()*Math.PI*2;
+  const cz = Math.random()*2-1;
+  const sz = Math.sqrt(Math.max(0,1-cz*cz));
+  const nx0 = sz*Math.cos(phi), ny0 = sz*Math.sin(phi), nz0 = cz;
+  let ux = -ny0, uy = nx0, uz = 0;
+  if (Math.hypot(ux,uy) < 1e-6) { ux = 1; uy = 0; uz = 0; }
+  const ul = Math.hypot(ux,uy,uz) || 1; ux/=ul; uy/=ul; uz/=ul;
+  const vx = ny0*uz - nz0*uy, vy = nz0*ux - nx0*uz, vz = nx0*uy - ny0*ux;
+  n.ux=ux; n.uy=uy; n.uz=uz; n.vx=vx; n.vy=vy; n.vz=vz;
   n.phase = Math.random()*6.283;
   n.omega = .55/Math.pow(Math.max(60,r0), 1.15);   // 开普勒：内圈转得快
+  n.dir = Math.random() < .38 ? -1 : 1;            // 约四成星星逆时针
+  n.omega *= n.dir;
   n.trail = [];
   n.zOff = (Math.random()-.5)*90;
-  n.x = Math.cos(n.theta)*r0;
-  n.y = Math.sin(n.theta)*r0*0.62;
-  n.z = n.zOff;
+  n.x = Math.cos(n.theta)*r0*n.ux;
+  n.y = Math.cos(n.theta)*r0*n.uy;
+  n.z = Math.cos(n.theta)*r0*n.uz + n.zOff*.25;
   n.flash = 0;
   n.lastMs = n.last ? Date.parse(n.last.replace(' ','T')) : now0;
   if (isNaN(n.lastMs)) n.lastMs = now0;
@@ -211,8 +229,12 @@ const CORE = Array.from({length: 150}, () => {
   };
 });
 const DUST_ROT0 = performance.now()/1000;
-let rot=0, zoom=1.62, simDays=0, playing=true, speed=0.3, drag=false, last={x:0,y:0};
+let rot=0, pitch=0, zoom=1.62, simDays=0, playing=true, speed=0.3, drag=false, last={x:0,y:0};
+let dragMoved=0;
 let hover=null, selected=null, showOrbits=true;
+let focus=null, focusHopCount=1;
+const ADJ={};
+L.forEach(l=>{(ADJ[l.s]=ADJ[l.s]||new Set()).add(l.t);(ADJ[l.t]=ADJ[l.t]||new Set()).add(l.s);});
 const show={稳定:true,待办:true,归档:true};
 
 function retention(n){
@@ -224,8 +246,11 @@ function retention(n){
 function hexA(hex,a){const x=parseInt(hex.slice(1),16);
   return 'rgba('+((x>>16)&255)+','+((x>>8)&255)+','+(x&255)+','+a.toFixed(3)+')';}
 function project(n){const c=Math.cos(rot),s=Math.sin(rot);
-  const x=n.x*c-n.z*s,z=n.x*s+n.z*c,p=900/(900+z+600)*zoom;
-  return {x:W/2+x*p,y:H/2+n.y*p,p,z};}
+  const x1=n.x*c-n.z*s, z1=n.x*s+n.z*c;
+  const cp=Math.cos(pitch), sp=Math.sin(pitch);
+  const y2=n.y*cp-z1*sp, z2=n.y*sp+z1*cp;
+  const p=900/(900+z2+600)*zoom;
+  return {x:W/2+x1*p,y:H/2+y2*p,p,z:z2};}
 
 function step(dt){
   const now = performance.now()/1000;
@@ -234,20 +259,37 @@ function step(dt){
     n.theta += n.omega * dt * (.55 + .9*r) * 60;   // 开普勒角速度
     const scale = 1 + .30*(1-r);                   // 快忘的往外飘
     const a = n.r0 * scale, b = a * (1 - n.ecc);
-    const x = Math.cos(n.theta)*a;
-    const y = Math.sin(n.theta)*b*0.62;
-    const z = Math.sin(n.theta + n.phase)*a*n.incl*0.35;
-    n.x = x; n.y = y; n.z = z + n.zOff*.25;
+    const ca = Math.cos(n.theta), sa = Math.sin(n.theta);
+    n.x = a*ca*n.ux + b*sa*n.vx;
+    n.y = a*ca*n.uy + b*sa*n.vy;
+    n.z = a*ca*n.uz + b*sa*n.vz + n.zOff*.25;
     n.trail.push([n.x, n.y, n.z]);
     if(n.trail.length > 26) n.trail.shift();
     if(n.flash>0) n.flash*=.94;
   }
 }
 
+function focusSet(){
+  if(!focus) return null;
+  const keep=new Set([focus.id]);
+  let frontier=[focus.id];
+  for(let h=0; h<focusHopCount; h++){
+    const next=[];
+    for(const id of frontier){
+      for(const nb of (ADJ[id]||[])){
+        if(!keep.has(nb)){ keep.add(nb); next.push(nb); }
+      }
+    }
+    frontier=next;
+  }
+  return keep;
+}
+
 function draw(){
   ctx.clearRect(0,0,W,H);
   const now = performance.now()/1000;
   const cx = W/2, cy = H/2;
+  const FS = focusSet();
 
   const neb = [[.30,.30,'#123f68',.55],[.72,.26,'#2a2154',.48],[.50,.78,'#0d3550',.42],[.16,.70,'#1c2e5c',.32]];
   for(const [fx,fy,col,al] of neb){
@@ -258,10 +300,10 @@ function draw(){
     ctx.fillStyle = g; ctx.fillRect(0,0,W,H);
   }
 
-  let core = ctx.createRadialGradient(cx,cy,0,cx,cy,200*zoom);
-  core.addColorStop(0,'rgba(255,244,214,.50)');
-  core.addColorStop(.16,'rgba(170,225,255,.20)');
-  core.addColorStop(.42,'rgba(95,155,235,.07)');
+  let core = ctx.createRadialGradient(cx,cy,0,cx,cy,150*zoom);
+  core.addColorStop(0,'rgba(255,244,214,.18)');
+  core.addColorStop(.16,'rgba(170,225,255,.08)');
+  core.addColorStop(.42,'rgba(95,155,235,.03)');
   core.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle = core; ctx.beginPath(); ctx.arc(cx,cy,200*zoom,0,7); ctx.fill();
 
@@ -296,15 +338,16 @@ function draw(){
 
   if(showOrbits){
     ctx.save();
-    for(const n of N.filter(x=>show[x.kind])){
+    for(const n of N.filter(x=>show[x.kind] && (!FS || FS.has(x.id)))){
       const scale = 1 + .30*(1-retention(n));
       const a = n.r0*scale, b = a*(1-n.ecc);
       ctx.strokeStyle = n.permanent ? 'rgba(255,215,106,.16)' : hexA(n.color,.085);
       ctx.lineWidth = .8;
       ctx.beginPath();
       for(let t=0;t<=Math.PI*2+.05;t+=.12){
-        const p = project({x:Math.cos(t)*a, y:Math.sin(t)*b*0.62,
-                           z:Math.sin(t+n.phase)*a*n.incl*0.35 + n.zOff*.25});
+        const ca=Math.cos(t), sa=Math.sin(t);
+        const p = project({x:a*ca*n.ux+b*sa*n.vx, y:a*ca*n.uy+b*sa*n.vy,
+                           z:a*ca*n.uz+b*sa*n.vz+n.zOff*.25});
         t===0 ? ctx.moveTo(p.x,p.y) : ctx.lineTo(p.x,p.y);
       }
       ctx.stroke();
@@ -312,7 +355,7 @@ function draw(){
     ctx.restore();
   }
 
-  for(const n of N.filter(x=>show[x.kind])){
+  for(const n of N.filter(x=>show[x.kind] && (!FS || FS.has(x.id)))){
     if(n.trail.length < 2) continue;
     ctx.beginPath();
     n.trail.forEach((pt,i)=>{
@@ -325,6 +368,7 @@ function draw(){
 
   for(const l of L){ const a=byId[l.s], b=byId[l.t];
     if(!a||!b||!show[a.kind]||!show[b.kind]) continue;
+    if(FS && !(FS.has(l.s)&&FS.has(l.t))) continue;
     const pa=project(a), pb=project(b), rr=Math.min(retention(a),retention(b));
     const mx=(pa.x+pb.x)/2, my=(pa.y+pb.y)/2;
     const qx=mx+(cx-mx)*.18, qy=my+(cy-my)*.18;
@@ -333,18 +377,20 @@ function draw(){
     ctx.beginPath(); ctx.moveTo(pa.x,pa.y); ctx.quadraticCurveTo(qx,qy,pb.x,pb.y); ctx.stroke();
   }
 
-  const vis = N.filter(n=>show[n.kind]);
+  const vis = N.filter(n=>show[n.kind] && (!FS || FS.has(n.id)));
   const pts = vis.map(n=>({n,...project(n)})).sort((a,b)=>a.z-b.z);
   for(const it of pts){
     const n=it.n, r=retention(n);
     const col = n.permanent ? '#ffd76a' : n.color;
     let rad=(2.2+Math.min(9,n.weight)*(.45+.75*r))*it.p*(1+.35*n.flash);
-    if(n.permanent) rad *= 1.9;
+    if(n.permanent) rad *= 1.6;
+    if(focus===n) rad *= 1.9;
+    it.rad = rad;
     const alpha=n.permanent?1:(.10+.90*r);
 
     ctx.save();
     ctx.shadowColor = hexA(col, .55*alpha);
-    ctx.shadowBlur = n.permanent ? 26 : 14*r*it.p;
+    ctx.shadowBlur = n.permanent ? 14 : 14*r*it.p;
     if(r>.18){
       const g=ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*4.6);
       g.addColorStop(0,hexA(col,.95*alpha));g.addColorStop(.35,hexA(col,.36*alpha));
@@ -357,19 +403,19 @@ function draw(){
 
     if(n.permanent){
       const pulse = 1 + .08*Math.sin(now*1.6);
-      // 外层柔光
-      const halo = ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*9*pulse);
-      halo.addColorStop(0,'rgba(255,246,214,.12)');
-      halo.addColorStop(.28,'rgba(255,214,120,.05)');
-      halo.addColorStop(.65,'rgba(255,180,80,.02)');
+      // 外层柔光（收一点，别糊住旁边的字）
+      const halo = ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*6*pulse);
+      halo.addColorStop(0,'rgba(255,246,214,.05)');
+      halo.addColorStop(.28,'rgba(255,214,120,.02)');
+      halo.addColorStop(.65,'rgba(255,180,80,.01)');
       halo.addColorStop(1,'rgba(255,170,60,0)');
       ctx.fillStyle = halo;
-      ctx.beginPath(); ctx.arc(it.x,it.y,rad*9*pulse,0,7); ctx.fill();
+      ctx.beginPath(); ctx.arc(it.x,it.y,rad*6*pulse,0,7); ctx.fill();
 
       // 白热核心
       const core = ctx.createRadialGradient(it.x,it.y,0,it.x,it.y,rad*2.2);
-      core.addColorStop(0,'rgba(255,252,236,.90)');
-      core.addColorStop(.45,'rgba(255,238,190,.55)');
+      core.addColorStop(0,'rgba(255,252,236,.55)');
+      core.addColorStop(.45,'rgba(255,238,190,.30)');
       core.addColorStop(1,'rgba(255,210,110,0)');
       ctx.fillStyle = core;
       ctx.beginPath(); ctx.arc(it.x,it.y,rad*2.2,0,7); ctx.fill();
@@ -382,10 +428,24 @@ function draw(){
       ctx.beginPath();ctx.arc(it.x,it.y,Math.max(2,rad+3),0,7);ctx.stroke(); }
     if(selected===n){ ctx.strokeStyle='#7ff3ff'; ctx.lineWidth=1.6;
       ctx.beginPath();ctx.arc(it.x,it.y,rad+9,0,7);ctx.stroke(); }
-    if(it.p>.5&&r>.34){ctx.fillStyle='rgba(215,232,255,'+(.32+.5*r).toFixed(2)+')';
-      ctx.font='12px "Microsoft YaHei",sans-serif';
-      ctx.fillText(n.label.slice(0,22),it.x+rad+6,it.y+4);}
   }
+
+  // 文字单独一层，压在所有光晕上面，保证可读
+  ctx.save();
+  ctx.font='12px "Microsoft YaHei",sans-serif';
+  ctx.shadowColor='rgba(3,7,14,.92)';
+  ctx.shadowBlur=4;
+  for(const it of pts){
+    const n=it.n, r=retention(n);
+    if(it.p>.5&&r>.34){
+      ctx.fillStyle='rgba(215,232,255,'+(.32+.5*r).toFixed(2)+')';
+      ctx.fillText(n.label.slice(0,22), it.x+(it.rad||4)+6, it.y+4);
+    } else if(FS&&FS.has(n.id)){
+      ctx.fillStyle='rgba(215,232,255,.62)';
+      ctx.fillText(n.label.slice(0,22), it.x+(it.rad||4)+6, it.y+4);
+    }
+  }
+  ctx.restore();
 }
 
 function updateHud(){
@@ -425,7 +485,9 @@ function selectNode(n){
   document.getElementById('d-text').textContent=n.text;
   document.getElementById('d-weight').textContent=n.weight.toFixed(1);
   document.getElementById('d-ret').textContent=Math.round(retention(n)*100)+'%';
+  document.getElementById('d-links').textContent=(ADJ[n.id]?ADJ[n.id].size:0);
   document.getElementById('d-last').textContent=(n.last||'—').slice(0,10);
+  document.getElementById('focusOn').textContent = (focus===n) ? '只看它的星系 ✓' : '只看它的星系';
 }
 document.querySelectorAll('.chip').forEach(ch=>{
   ch.onclick=()=>{const k=ch.dataset.k;show[k]=!show[k];ch.classList.toggle('on',show[k]);buildList();};
@@ -475,6 +537,7 @@ async function hitNode(n){
   }catch(e){ toast('写入失败：' + e.message); }
 }
 cv.addEventListener('click',e=>{
+  if(dragMoved>6){ dragMoved=0; return; }
   for(const n of N){const p=project(n);
     if(Math.hypot(p.x-e.clientX,p.y-e.clientY)<16){ selectNode(n); break; }}
 });
@@ -482,11 +545,15 @@ cv.addEventListener('dblclick',e=>{
   for(const n of N){const p=project(n);
     if(Math.hypot(p.x-e.clientX,p.y-e.clientY)<16){ hitNode(n); break; }}
 });
-cv.addEventListener('wheel',e=>{zoom*=e.deltaY>0?.92:1.08;zoom=Math.max(.5,Math.min(3.4,zoom));},{passive:true});
-cv.addEventListener('mousedown',e=>{drag=true;last={x:e.clientX,y:e.clientY};});
+cv.addEventListener('wheel',e=>{zoom*=e.deltaY>0?.90:1.12;zoom=Math.max(.35,Math.min(8,zoom));},{passive:true});
+cv.addEventListener('mousedown',e=>{drag=true;dragMoved=0;last={x:e.clientX,y:e.clientY};});
 addEventListener('mouseup',()=>drag=false);
 addEventListener('mousemove',e=>{if(!drag)return;
-  rot+=(e.clientX-last.x)*.005;N.forEach(n=>n.y+=(e.clientY-last.y)*.25);
+  const dx=e.clientX-last.x, dy=e.clientY-last.y;
+  dragMoved+=Math.abs(dx)+Math.abs(dy);
+  rot+=dx*.005;
+  pitch+=dy*.005;
+  pitch=((pitch+Math.PI)%(Math.PI*2)+Math.PI*2)%(Math.PI*2)-Math.PI;  // 360° 上下也能转
   last={x:e.clientX,y:e.clientY};});
 
 document.getElementById('play').onclick=function(){
@@ -495,10 +562,35 @@ document.getElementById('speed').oninput=e=>{speed=parseFloat(e.target.value);
   document.getElementById('spd').textContent=speed.toFixed(2)+' 天/秒';};
 document.getElementById('review').onclick=()=>{N.forEach(n=>{
   n.weight=Math.min(9,n.weight+.4);n.lastMs=now0;n.flash=1;});};
-document.getElementById('reset').onclick=()=>{rot=0;zoom=1.62;simDays=0;};
+document.getElementById('reset').onclick=()=>{rot=0;pitch=0;zoom=1.62;simDays=0;};
 document.getElementById('orbits').onclick=function(){
   showOrbits=!showOrbits;
   this.textContent='轨道：'+(showOrbits?'开':'关');};
+document.getElementById('focusOn').onclick=()=>{
+  if(!selected) return;
+  focus=selected; toast('只看「'+selected.label.slice(0,12)+'」的星系');
+  selectNode(selected);
+};
+document.getElementById('focusOff').onclick=()=>{ focus=null; if(selected) selectNode(selected); };
+document.getElementById('focusHop').onclick=function(){
+  focusHopCount = focusHopCount>=2 ? 1 : 2;
+  this.textContent=focusHopCount+' 跳';
+  toast('关联 '+focusHopCount+' 跳');
+};
+addEventListener('keydown',e=>{ if(e.key==='Escape'){ focus=null; if(selected) selectNode(selected); } });
+document.getElementById('dedupe').onclick=async function(){
+  if(location.protocol==='file:'){ toast('本地文件模式不能去重'); return; }
+  this.disabled=true; this.textContent='去重中…';
+  try{
+    const r=await fetch('/api/memory/dedupe',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d=await r.json();
+    if(d && d.ok){
+      toast('去重完成：合并 '+(d.merged||0)+' 条，剩 '+(d.after||'?')+' 条');
+      setTimeout(()=>location.reload(),1400);
+    } else toast('去重失败：'+((d&&d.error)||'未知错误'));
+  }catch(e){ toast('去重失败：'+e.message); }
+  this.disabled=false; this.textContent='去重';
+};
 updateHud();buildList();
 </script></body></html>
 """
@@ -543,10 +635,13 @@ def build(store):
         })
 
     links = []
+    # 连线只保留「至少共享 2 个二字片段」的强关联，并剔掉高频噪声词
+    STOP = {"用户", "助手", "主人", "小鲸", "记忆", "一个", "自己", "可以", "这个", "那个",
+            "什么", "时候", "今天", "现在", "还是", "就是", "没有", "不是", "因为", "所以"}
     for i in range(len(nodes)):
         for j in range(i + 1, len(nodes)):
-            shared = nodes[i]["_g"] & nodes[j]["_g"]
-            if shared:
+            shared = (nodes[i]["_g"] & nodes[j]["_g"]) - STOP
+            if len(shared) >= 2:
                 links.append({"s": nodes[i]["id"], "t": nodes[j]["id"],
                               "w": min(1.0, len(shared) / 6)})
     for n in nodes:
