@@ -671,3 +671,10 @@ python -m memblocks.cli distill
 python -m memblocks.cli --root <记忆目录> serve --port 8765
 ```
 `GET /star`、`POST /api/memory/hit`、`POST /api/memory/dedupe` 都有。
+
+## 版本号说明
+
+- **插件版本**：2.5.0（仓库 `VERSION`，GitHub release 依据）
+- **星图模块**：star 1.7（2026-11-02 那次改动的内部编号：去重 / 聚焦 / 360° / 三维轨道）
+
+看插件整体用 2.5.0；只在讨论星图这一块时才会说 star 1.7。
