@@ -246,12 +246,23 @@ class Store:
         text = self._check(text, 200, "待办")
         with self._locked():
             data = _load(self.todo, [])
+            # 同一句话再提一次：加权，不新增
+            for old in data:
+                if _norm(old.get("text", "")) == _norm(text) and not old.get("done"):
+                    old["weight"] = round(min(5.0, float(old.get("weight", 1.0)) + 0.5), 2)
+                    old["last_hit"] = time.strftime("%Y-%m-%d %H:%M")
+                    old["last_decay"] = time.strftime("%Y-%m-%d")
+                    _save(self.todo, data)
+                    return old
             item = {
                 "id": "td-" + uuid.uuid4().hex[:8],
                 "text": text,
                 "due": normalize(due) or due,
                 "done": False,
+                "weight": 1.0,
                 "at": time.strftime("%Y-%m-%d %H:%M"),
+                "last_hit": time.strftime("%Y-%m-%d %H:%M"),
+                "last_decay": time.strftime("%Y-%m-%d"),
             }
             data.append(item)
             _save(self.todo, data)
@@ -260,6 +271,19 @@ class Store:
     def todo_list(self, include_done=False):
         data = _load(self.todo, [])
         return data if include_done else [x for x in data if not x.get("done")]
+
+    def todo_touch(self, tid):
+        """复习某条待办：权重 +0.5。"""
+        with self._locked():
+            data = _load(self.todo, [])
+            for x in data:
+                if x.get("id") == tid:
+                    x["weight"] = round(min(5.0, float(x.get("weight", 1.0)) + 0.5), 2)
+                    x["last_hit"] = time.strftime("%Y-%m-%d %H:%M")
+                    x["last_decay"] = time.strftime("%Y-%m-%d")
+                    _save(self.todo, data)
+                    return x
+        return None
 
     def todo_done(self, tid):
         with self._locked():
