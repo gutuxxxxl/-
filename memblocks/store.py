@@ -53,6 +53,7 @@ class Store:
         self.lock = self.root / ".lock"
         self.config = self.root / "config.json"
         self.buffer = self.root / "buffer.jsonl"
+        self.events = self.root / "events.jsonl"
 
     # ---------- 基础 ----------
     def init(self):
@@ -66,6 +67,8 @@ class Store:
             if not p.exists():
                 _save(p, d)
         try:
+            if not self.events.exists():
+                self.events.write_text("", encoding="utf-8")
             if not self.buffer.exists():
                 self.buffer.write_text("", encoding="utf-8")
             if not self.archive.exists():
@@ -193,6 +196,56 @@ class Store:
                     _save(self.stable, data)
                     return x
         return None
+
+    def event_add(self, text, ttl_days=3):
+        """近期事件：默认只保留 3 天。"""
+        text = (text or "").strip()
+        if not text:
+            raise ValueError("事件不能为空")
+        rec = {
+            "id": "ev-" + uuid.uuid4().hex[:8],
+            "text": text[:200],
+            "at": time.strftime("%Y-%m-%d"),
+            "ttl": int(ttl_days),
+        }
+        with open(self.events, "a", encoding="utf-8") as f:
+            f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+        return rec
+
+    def event_list(self):
+        rows = []
+        try:
+            for line in self.events.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if line:
+                    try:
+                        rows.append(json.loads(line))
+                    except Exception:
+                        pass
+        except FileNotFoundError:
+            pass
+        return rows
+
+    def event_purge(self, days=None):
+        """删掉超过 ttl 的事件，返回被删列表。"""
+        from datetime import date, datetime, timedelta
+        today = date.today()
+        keep, dropped = [], []
+        for ev in self.event_list():
+            ttl = int(days if days is not None else ev.get("ttl", 3))
+            try:
+                born = datetime.strptime(ev.get("at", ""), "%Y-%m-%d").date()
+            except Exception:
+                dropped.append(ev)
+                continue
+            if (today - born).days >= ttl:
+                dropped.append(ev)
+            else:
+                keep.append(ev)
+        if dropped:
+            self.events.write_text("".join(json.dumps(x, ensure_ascii=False) + "\n" for x in keep),
+                                   encoding="utf-8")
+        return dropped
 
     def buffer_list(self):
         rows = []
@@ -348,6 +401,7 @@ class Store:
         stable = sorted([x for x in self.stable_list() if not x.get("display_only")],
                         key=lambda x: -float(x.get("weight", 1.0)))
         todos = self.todo_list()
+        events = self.event_list()[-3:]
         hits = []
         if query:
             q = _norm(query)
@@ -376,6 +430,7 @@ class Store:
                 used += len(block)
 
         add("【稳定记忆】", [f"- {x['text']}" for x in stable], 0.5)
+        add("【近几天】", [f"- {e['text']}" for e in events], 0.18)
         add("【待办】", [f"- {x['text']}" + (f"（截止 {x['due']}）" if x.get("due") else "")
                         for x in todos], 0.3)
         add("【相关归档】", [f"- {b.get('summary', '')}" for b in hits[:3]], 0.3)
