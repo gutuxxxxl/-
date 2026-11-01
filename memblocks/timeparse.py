@@ -49,7 +49,9 @@ def normalize(text, ref=None):
 
     simple = {"今天": 0, "今日": 0, "昨天": -1, "昨日": -1, "前天": -2, "大前天": -3,
               "明天": 1, "后天": 2, "大后天": 3,
-              "一会": 0, "一会儿": 0, "待会": 0, "待会儿": 0, "马上": 0, "马上去": 0}
+              "一会": 0, "一会儿": 0, "待会": 0, "待会儿": 0, "马上": 0, "马上去": 0,
+              "今晚": 0, "今天晚上": 0, "晚上": 0, "今夜": 0,
+              "早上": 0, "上午": 0, "中午": 0, "下午": 0, "傍晚": 0}
     for k, off in sorted(simple.items(), key=lambda x: -len(x[0])):
         if k in t:
             return (ref + timedelta(days=off)).isoformat()
@@ -70,6 +72,17 @@ def normalize(text, ref=None):
                 return ref.replace(year=ref.year - n if back else ref.year + n).isoformat()
             except ValueError:
                 return ref.replace(year=ref.year - n if back else ref.year + n, day=28).isoformat()
+
+    # 明天晚上 / 后天早上（先取日期再加时间词）
+    m = re.search(r"(明天|后天|大后天|今天)(晚上|早上|上午|下午|中午|傍晚)", t)
+    if m:
+        off = {"今天": 0, "明天": 1, "后天": 2, "大后天": 3}[m.group(1)]
+        return (ref + timedelta(days=off)).isoformat()
+
+    # 周末：最近的周六（含今天）
+    if "周末" in t or "这周末" in t:
+        days = (5 - ref.weekday()) % 7
+        return (ref + timedelta(days=days)).isoformat()
 
     # 上周三 / 这周三 / 下周三
     m = re.search(r"(上上周|上周|这周|本周|下周)([一二三四五六日天])", t)
