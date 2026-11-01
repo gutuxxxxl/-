@@ -90,7 +90,7 @@ store.restore("memories/snapshots/snap-20261031-060000-ab12")
 
 ```bash
 python -m unittest discover -s tests -v
-# 85 tests OK
+# 87 tests OK
 ```
 
 覆盖：去重合并、上限淘汰、人设保护、过期待办归档、dry-run、块拆分、
@@ -638,3 +638,36 @@ python -m memblocks.cli distill
 - 存在 `events.jsonl`，`janitor` 每天清超过 3 天的
 - 注入时以【近几天】出现（最多 3 条）
 - 星图上是青绿色节点
+
+## 星图 1.7：能去重、能钻进去看
+
+这一版把星图从"只能看"变成"能操作"：
+
+**一键去重**
+- 页面底部「去重」按钮 / `POST /api/memory/dedupe` / QQ 发 `/记忆去重`
+- 稳定区里同 tag、非 protected、相似度 ≥0.82 的条目合并，权重相加（封顶 9）
+- 被合并的进 `archive.jsonl`，可追溯
+- `janitor` 每天也会跑一遍，防止再长出重复
+
+**点星聚焦**
+- 点一颗星 →「只看它的星系」，只画它和邻居
+- 1 跳 / 2 跳 切换，`Esc` 回全景
+
+**360° 旋转**
+- 拖拽左右转水平角、上下调俯仰角，不会卡在极点
+- 拖拽超过 6 像素不算点选，转的时候不会误触
+
+**更好读**
+- 文字单独一层，加描边阴影，星星再亮也不糊字
+- 中心光晕收敛，恒星亮度下调
+- 滚轮缩放上限 8 倍，下限 0.35
+
+**更立体**
+- 每颗星有随机的三维轨道平面，不再是一张扁盘
+- 约 38% 逆时针，其余顺时针（每次刷新随机）
+
+**无面板也能看**
+```bash
+python -m memblocks.cli --root <记忆目录> serve --port 8765
+```
+`GET /star`、`POST /api/memory/hit`、`POST /api/memory/dedupe` 都有。
