@@ -190,6 +190,32 @@ class TestStaleTodo(Base):
         self.assertEqual(len(self.st.todo_list()), 1)
 
 
+class TestEvents(Base):
+    def test_event_expires_after_three_days(self):
+        from datetime import date, timedelta
+        self.st.event_add("昨天吃了火锅")
+        self.st.event_add("今天去了超市")
+        data = self.st.events.read_text(encoding="utf-8").splitlines()
+        import json as _json
+        rows = [_json.loads(x) for x in data]
+        rows[0]["at"] = (date.today() - timedelta(days=4)).isoformat()
+        self.st.events.write_text("".join(_json.dumps(r, ensure_ascii=False) + "\n" for r in rows),
+                                  encoding="utf-8")
+        dropped = self.st.event_purge()
+        self.assertEqual(len(dropped), 1)
+        self.assertEqual([e["text"] for e in self.st.event_list()], ["今天去了超市"])
+
+    def test_event_in_inject(self):
+        self.st.event_add("刚吃完火锅")
+        self.assertIn("刚吃完火锅", self.st.inject("吃什么", 300))
+
+    def test_event_in_star(self):
+        from memblocks.star import build
+        self.st.event_add("刚吃完火锅")
+        nodes = build(self.st)["nodes"]
+        self.assertTrue(any(n["kind"] == "事件" for n in nodes))
+
+
 class TestDisplayOnly(Base):
     def test_inject_excludes_display_only(self):
         self.st.stable_add("要注入的事实")
