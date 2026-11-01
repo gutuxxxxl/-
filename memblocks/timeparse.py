@@ -48,7 +48,8 @@ def normalize(text, ref=None):
             return ""
 
     simple = {"今天": 0, "今日": 0, "昨天": -1, "昨日": -1, "前天": -2, "大前天": -3,
-              "明天": 1, "后天": 2, "大后天": 3}
+              "明天": 1, "后天": 2, "大后天": 3,
+              "一会": 0, "一会儿": 0, "待会": 0, "待会儿": 0, "马上": 0, "马上去": 0}
     for k, off in sorted(simple.items(), key=lambda x: -len(x[0])):
         if k in t:
             return (ref + timedelta(days=off)).isoformat()
