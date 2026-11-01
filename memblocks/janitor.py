@@ -42,16 +42,38 @@ class Janitor:
         r["expired"] = changed
 
         # 2) 已完成的、超过 purge_days 的 → 归档后删除
+        #    没有截止日期的待办：按遗忘曲线衰减
         keep, drop = [], []
+        faded = 0
         for t in todos:
             d = self._due(t.get("due", ""))
             if t.get("done") and d and (today - d).days >= self.purge_days:
                 drop.append(t)
+            elif not d and not t.get("done"):
+                # 没有截止日期：按遗忘曲线衰减，淡到 0.2 以下才消失
+                decayed = None
+                try:
+                    from datetime import datetime
+                    base = t.get("last_decay") or (t.get("at", "") or "")[:10]
+                    days = max(0, (today - datetime.strptime(base, "%Y-%m-%d").date()).days)
+                    w = float(t.get("weight", 1.0)) * (0.85 ** days)
+                    t["weight"] = round(w, 3)
+                    t["last_decay"] = today.isoformat()
+                    decayed = w
+                except Exception:
+                    pass
+                if decayed is not None and decayed < 0.2:
+                    drop.append(t)
+                    continue
+                if decayed is not None:
+                    faded += 1
+                keep.append(t)
             else:
                 keep.append(t)
         r["purged"] = len(drop)
+        r["todos_decayed"] = faded
 
-        if (changed or drop) and not self.dry_run:
+        if (changed or drop or faded) and not self.dry_run:
             if drop:
                 with open(self.s.archive, "a", encoding="utf-8") as f:
                     for t in drop:
