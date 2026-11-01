@@ -30,6 +30,21 @@ def _main():
     cfg.add_argument("--star", choices=["on", "off"])
     cfg.add_argument("--dsh", choices=["on", "off"])
     cfg.add_argument("--show", action="store_true")
+    cfg.add_argument("--llm-key", default=None)
+    cfg.add_argument("--llm-url", default=None)
+    cfg.add_argument("--llm-model", default=None)
+    cfg.add_argument("--distill-min", type=int, default=None)
+
+    cap = sub.add_parser("capture")
+    cap.add_argument("--text", required=True)
+    cap.add_argument("--role", default="user")
+
+    dis = sub.add_parser("distill")
+    dis.add_argument("--min", dest="min_msgs", type=int, default=None)
+    dis.add_argument("--force", action="store_true")
+
+    buf = sub.add_parser("buffer")
+    buf.add_argument("--list", action="store_true")
 
     sv = sub.add_parser("serve")
     sv.add_argument("--port", type=int, default=8765)
@@ -140,8 +155,29 @@ def _main():
             st.config_set(star_enabled=(args.star == "on"))
         if args.dsh:
             st.config_set(dsh_enabled=(args.dsh == "on"))
+        llm_cfg = dict(st.config_get().get("llm") or {})
+        if args.llm_key:
+            llm_cfg["api_key"] = args.llm_key
+        if args.llm_url:
+            llm_cfg["base_url"] = args.llm_url
+        if args.llm_model:
+            llm_cfg["model"] = args.llm_model
+        if llm_cfg:
+            st.config_set(llm=llm_cfg)
+        if args.distill_min is not None:
+            st.config_set(distill_min=args.distill_min)
         cfgd = st.config_get()
         print(json.dumps(cfgd, ensure_ascii=False, indent=2))
+    elif args.cmd == "capture":
+        from .semantic import capture
+        print(json.dumps(capture(st, args.text, args.role), ensure_ascii=False))
+    elif args.cmd == "distill":
+        from .semantic import distill
+        r = distill(st, min_msgs=args.min_msgs, force=args.force)
+        print(json.dumps({k: v for k, v in r.items() if k != "added"} |
+                         {"added": [x["text"] for x in r.get("added", [])]}, ensure_ascii=False, indent=2))
+    elif args.cmd == "buffer":
+        print(json.dumps(st.buffer_list(), ensure_ascii=False, indent=2))
     elif args.cmd == "serve":
         from .serve import serve
         httpd = serve(st.root, args.port, args.host)
