@@ -89,19 +89,37 @@ class Janitor:
             _save(self.s.todo, keep)
             self.changes += 1
 
-        # 稳定区：近重复合并
-        stable = self.s.stable_list()
-        seen, merged = {}, 0
-        for x in stable:
-            k = _norm(x.get("text"))
-            if k in seen:
-                seen[k]["weight"] = round(float(seen[k].get("weight", 1.0)) + 0.1, 2)
-                merged += 1
+        # 稳定区：近重复合并（精确命中 或 相似度 >= 0.82，同 tag）
+        import difflib
+        kept, exact, fuzzy = [], 0, 0
+        for x in self.s.stable_list():
+            tx = _norm(x.get("text"))
+            tag = (x.get("tags") or [""])[0]
+            hit = None
+            for y in kept:
+                ty = _norm(y.get("text"))
+                if tx and tx == ty:
+                    hit, exact = y, exact + 1
+                    break
+                if x.get("protected") or y.get("protected"):
+                    continue
+                if len(tx) < 12 or not tag or (y.get("tags") or [""])[0] != tag:
+                    continue
+                if abs(len(tx) - len(ty)) > max(len(tx), len(ty)) * 0.6:
+                    continue
+                if difflib.SequenceMatcher(None, tx, ty).ratio() >= 0.82:
+                    hit, fuzzy = y, fuzzy + 1
+                    break
+            if hit is not None:
+                hit["weight"] = round(min(9.0, float(hit.get("weight", 1.0))
+                                          + float(x.get("weight", 1.0)) * 0.25), 2)
             else:
-                seen[k] = x
-        r["stable_merged"] = merged
-        if merged and not self.dry_run:
-            _save(self.s.stable, list(seen.values()))
+                kept.append(x)
+        r["stable_merged"] = exact + fuzzy
+        r["stable_fuzzy_merged"] = fuzzy
+        if (exact or fuzzy) and not self.dry_run:
+            _save(self.s.stable, kept)
+            self.s.log(f"janitor: 合并重复 {exact + fuzzy} 条（精确 {exact} / 相似 {fuzzy}）")
             self.changes += 1
 
         # 稳定区：超上限按权重淘汰
