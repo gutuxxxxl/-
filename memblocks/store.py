@@ -52,6 +52,7 @@ class Store:
         self.audit = self.root / "audit.log"
         self.lock = self.root / ".lock"
         self.config = self.root / "config.json"
+        self.buffer = self.root / "buffer.jsonl"
 
     # ---------- 基础 ----------
     def init(self):
@@ -65,6 +66,8 @@ class Store:
             if not p.exists():
                 _save(p, d)
         try:
+            if not self.buffer.exists():
+                self.buffer.write_text("", encoding="utf-8")
             if not self.archive.exists():
                 self.archive.write_text("", encoding="utf-8")
         except OSError as e:
@@ -190,6 +193,21 @@ class Store:
                     _save(self.stable, data)
                     return x
         return None
+
+    def buffer_list(self):
+        rows = []
+        try:
+            for line in self.buffer.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except Exception:
+                    continue
+        except FileNotFoundError:
+            pass
+        return rows
 
     def stable_list(self):
         return _load(self.stable, [])
