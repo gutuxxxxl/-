@@ -99,6 +99,16 @@ class TestDistill(unittest.TestCase):
         distill(self.st, client=client)
         self.assertEqual(len(self.st.todo_list()), 1)
 
+    def test_past_event_kept_as_experience(self):
+        for t in ["上周刚搬完家", "x", "y"]:
+            capture(self.st, t)
+        client = FakeClient([{"text": "上周刚搬完家", "kind": "经历",
+                              "importance": 4, "confidence": 0.9}])
+        distill(self.st, client=client)
+        items = self.st.stable_list()
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["tags"], ["经历"])
+
     def test_usage_logged(self):
         for t in ["a", "b", "c"]:
             capture(self.st, t)
