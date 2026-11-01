@@ -14,7 +14,8 @@ SYSTEM = """你是记忆抽取器。读下面的对话，只抽取值得长期�
 2. 聊天语气、情绪、一次性的琐事不要。
 3. 每条不超过 40 字，用陈述句，不要用「他说」这类转述前缀。
 4. 没有可记的就输出 []。
-输出 JSON 数组，每项字段：text（事实）、kind（事实/偏好/习惯/关系/待办）、importance（1-5）、confidence（0-1）。
+输出 JSON 数组，每项字段：text（事实）、kind（事实/偏好/习惯/关系/待办）、
+due（待办的原话时间，如「明天」「一会」「下周三」，没有就空字符串）、importance（1-5）、confidence（0-1）。
 只输出 JSON，不要别的文字。
 """
 
@@ -59,6 +60,7 @@ def parse_facts(raw):
         out.append({
             "text": text[:200],
             "kind": str(it.get("kind") or "事实")[:8],
+            "due": str(it.get("due") or "").strip()[:20],
             "importance": max(1.0, min(5.0, imp)),
             "confidence": max(0.0, min(1.0, conf)),
         })
@@ -113,7 +115,7 @@ def distill(store, client=None, min_msgs=None, force=False, keep_rest=True):
         w = round(0.6 + 0.3 * f["importance"] + 0.2 * f["confidence"], 2)
         kind = f["kind"]
         if kind == "待办":
-            item = store.todo_add(f["text"], "")
+            item = store.todo_add(f["text"], f.get("due") or "")
         else:
             before = len(store.stable_list())
             item = store.stable_add(f["text"], [kind], weight=w)
