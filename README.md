@@ -19,7 +19,7 @@
 纯标准库，Python 3.10+，不用 pip。
 
 ```bash
-git clone https://github.com/gutuxxxxl/-.git memblocks
+git clone https://github.com/gutuxxxxl/dsh-memory-blocks.git memblocks
 cd memblocks
 python -m memblocks.cli init
 ```
